@@ -1,18 +1,6 @@
-package smthelusive.debyter.domain;
+package smthelusive.debyter.constants;
 
-public class Constants {
-    public static final String LOCALHOST = "127.0.0.1";
-    public static final String JDWP_HANDSHAKE = "JDWP-Handshake";
-    public static final int EMPTY_FLAGS = 0;
-
-    public static final int EMPTY_PACKET_SIZE = 11;
-
-    public static final int VIRTUAL_MACHINE_COMMAND_SET = 1;
-    public static final int REFERENCE_TYPE_COMMAND_SET = 2;
-    public static final int CLASS_TYPE_COMMAND_SET = 3;
-    public static final int ARRAY_TYPE_COMMAND_SET = 4;
-    public static final int EVENT_REQUEST_COMMAND_SET = 15;
-
+public class Command {
     // Commands set 1:
     public static final int VERSION_CMD = 1;
     public static final int CLASSES_BY_SIGNATURE_CMD = 2;
@@ -65,18 +53,12 @@ public class Constants {
     // Commands set 4:
     public static final int ARRAY_NEW_INSTANCE_CMD = 1;
 
+    // Commands set 6:
+    public static final int LINETABLE_CMD = 1;
+
     // Commands set 15:
     public static final int SET_CMD = 1;
 
-
-    // EVENT KINDS:
-    public static final int EVENT_KIND_BREAKPOINT = 2;
-    public static final int EVENT_KIND_CLASS_LOAD = 10;
-
-    // RESPONSE TYPES (INTERNAL):
-    public static final int RESPONSE_TYPE_NONE = 0;
-    public static final int RESPONSE_TYPE_CLASS_INFO = 1;
-    public static final int RESPONSE_TYPE_ALL_CLASSES = 2;
-    public static final int RESPONSE_TYPE_COMPOSITE_EVENT = 3;
-
+    // Commands set 64:
+    public static final int COMPOSITE_EVENT_CMD = 100;
 }

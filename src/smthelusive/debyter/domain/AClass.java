@@ -1,15 +1,13 @@
 package smthelusive.debyter.domain;
 
-import smthelusive.debyter.Utils;
-
-public class Clazz {
+public class AClass {
     byte refTypeTag;
     long typeID;
     int status;
 
     String signature;
 
-    public Clazz(byte refTypeTag, long typeID, String signature, int status) {
+    public AClass(byte refTypeTag, long typeID, String signature, int status) {
         this.refTypeTag = refTypeTag;
         this.typeID = typeID;
         this.signature = signature;

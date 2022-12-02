@@ -4,8 +4,7 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
-import static smthelusive.debyter.Utils.getByteOfInt;
-import static smthelusive.debyter.Utils.getBytesOfInt;
+import static smthelusive.debyter.Utils.*;
 
 public class Packet {
     private final LinkedList<Byte> bytes = new LinkedList<>();
@@ -19,7 +18,9 @@ public class Packet {
     private void setLength(int length) {
         byte[] lengthBytes = getBytesOfInt(length);
         for (int i = 0; i < 4; i++) {
-            bytes.add(i, lengthBytes[i]);
+            if (bytes.size() >= 4)
+                bytes.set(i, lengthBytes[i]);
+            else bytes.add(i, lengthBytes[i]);
         }
     }
 
@@ -38,6 +39,13 @@ public class Packet {
 
     public void addDataAsInt(int value) {
         byte[] valueInBytes = getBytesOfInt(value);
+        for (Byte theByte: valueInBytes) {
+            bytes.add(bytes.size(), theByte);
+        }
+    }
+
+    public void addDataAsLong(long value) {
+        byte[] valueInBytes = getBytesOfLong(value);
         for (Byte theByte: valueInBytes) {
             bytes.add(bytes.size(), theByte);
         }

@@ -3,19 +3,19 @@ package smthelusive.debyter.domain;
 public class Event {
     private byte eventKind;
     private int requestID;
-    private long thread; // todo not sure about type
-    private int location; // todo not sure about type
-    private int catchLocation; // todo not sure about type
-    private String value; // todo not sure about type
-    private String object; // todo not sure about type
+    private long thread;
+    private Location location;
+    private int catchLocation;
+    private String value;
+    private String object;
     private long timeout;
     private boolean timedOut;
-    private String exception; // todo not sure about type
-    private byte refTypeTag; // todo fill in the constants
+    private String exception;
+    private byte refTypeTag;
     private long refTypeId;
-    private String typeID; // todo type???
+    private long typeID;
     private String signature;
-    private int	status; // todo fill out constants
+    private int	status;
     private int fieldID;
 
     public byte getEventKind() {
@@ -50,11 +50,11 @@ public class Event {
         this.thread = thread;
     }
 
-    public int getLocation() {
+    public Location getLocation() {
         return location;
     }
 
-    public void setLocation(int location) {
+    public void setLocation(Location location) {
         this.location = location;
     }
 
@@ -114,11 +114,11 @@ public class Event {
         this.refTypeTag = refTypeTag;
     }
 
-    public String getTypeID() {
+    public long getTypeID() {
         return typeID;
     }
 
-    public void setTypeID(String typeID) {
+    public void setTypeID(long typeID) {
         this.typeID = typeID;
     }
 

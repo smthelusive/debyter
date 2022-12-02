@@ -14,7 +14,17 @@ public class ResponsePacket {
     private ArrayList<Event> eventsList;
 
     private int responseType;
-    private ArrayList<Clazz> classes;
+    private ArrayList<AClass> classes;
+    private ArrayList<AMethod> methods;
+    private LineTable lineTable;
+
+    public LineTable getLineTable() {
+        return lineTable;
+    }
+
+    public void setLineTable(LineTable lineTable) {
+        this.lineTable = lineTable;
+    }
 
     public int getLength() {
         return length;
@@ -81,7 +91,11 @@ public class ResponsePacket {
         this.responseType = responseType;
     }
 
-    public ArrayList<Clazz> getClasses() {
+    public ArrayList<AMethod> getMethods() {
+        return methods;
+    }
+
+    public ArrayList<AClass> getClasses() {
         return classes;
     }
 
@@ -89,13 +103,15 @@ public class ResponsePacket {
         addClass(refTypeTag, typeID, null, status);
     }
     public void addClass(byte refTypeTag, long typeID, String signature, int status) {
-        Clazz clazz = new Clazz(refTypeTag, typeID, signature, status);
+        AClass aClass = new AClass(refTypeTag, typeID, signature, status);
         if (this.classes == null) classes = new ArrayList<>();
-        classes.add(clazz);
+        classes.add(aClass);
     }
 
-    public void addEvent() {
-
+    public void addMethod(long methodId, String name, String signature, int modBits) {
+        AMethod aMethod = new AMethod(methodId, name, signature, modBits);
+        if (this.methods == null) methods = new ArrayList<>();
+        methods.add(aMethod);
     }
 
     @Override
@@ -110,6 +126,7 @@ public class ResponsePacket {
                 ", eventsList=" + eventsList +
                 ", responseType=" + responseType +
                 ", classes=" + classes +
+                ", methods=" + methods +
                 '}';
     }
 }
