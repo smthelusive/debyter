@@ -44,20 +44,18 @@ public class Command {
     public static final int CLASS_FILE_VERSION_CMD = 17;
     public static final int CONSTANT_POOL_CMD = 18;
 
-    // Commands set 3:
-    public static final int SUPERCLASS_CMD = 1;
-    public static final int SET_VALUES_CMD = 2;
-    public static final int INVOKE_METHOD_CMD = 3;
-    public static final int CLASS_NEW_INSTANCE_CMD = 4;
-
-    // Commands set 4:
-    public static final int ARRAY_NEW_INSTANCE_CMD = 1;
-
     // Commands set 6:
     public static final int LINETABLE_CMD = 1;
+    public static final int VARIABLETABLE_CMD = 2;
+
+    // Command set 11:
+    public static final int FRAMES = 6;
 
     // Commands set 15:
     public static final int SET_CMD = 1;
+
+    // Commands set 16:
+    public static final int GET_VALUES = 1;
 
     // Commands set 64:
     public static final int COMPOSITE_EVENT_CMD = 100;

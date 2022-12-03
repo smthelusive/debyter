@@ -2,6 +2,7 @@ package smthelusive.debyter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import smthelusive.debyter.constants.Type;
 import smthelusive.debyter.domain.*;
 
 import java.io.IOException;
@@ -22,8 +23,8 @@ public class ResponseProcessor extends Thread {
     private final Map<Integer, Integer> requestsSent = new HashMap<>();
     private final Logger logger = LoggerFactory.getLogger(ResponseProcessor.class);
     private int lastPos;
-
     private long classId;
+    private long threadId;
     private final ResponseNotifier notifier;
 
     public void requestIsSent(int id, int expectedResponseType) {
@@ -105,6 +106,15 @@ public class ResponseProcessor extends Thread {
             case RESPONSE_TYPE_METHODS:
                 responsePacket = parseResponseMethods(result);
                 break;
+            case RESPONSE_TYPE_VARIABLETABLE:
+                responsePacket = parseResponseVariableTable(result);
+                break;
+            case RESPONSE_TYPE_FRAME_INFO:
+                responsePacket = parseResponseFrame(result);
+                break;
+            case RESPONSE_TYPE_LOCAL_VARIABLES:
+                responsePacket = parseResponseVariable(result);
+                break;
             default: logger.info(Arrays.toString(result));
         }
         responsePacket.setResponseType(type);
@@ -112,6 +122,40 @@ public class ResponseProcessor extends Thread {
         responsePacket.setId(idValue);
         responsePacket.setFlag(flag);
         responsePacket.setErrorCode(errorCode);
+        return responsePacket;
+    }
+
+    private ResponsePacket parseResponseVariable(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        int amountOfValues = getIntFromData(result);
+        if (amountOfValues != 1) logger.error("invalid amount of values received");
+        byte type = result[lastPos];
+        lastPos++;
+        switch (type) {
+            case Type.INT:
+                int value = getIntFromData(result);
+                logger.info("the value is: " + value);
+                break;
+            default:
+                logger.error("something unexpected happened");
+        }
+        return responsePacket;
+    }
+
+    private ResponsePacket parseResponseFrame(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        long amount = getIntFromData(result);
+        if (amount != 1) logger.error("got more than one frame in response");
+        long frameId = getLongFromData(result);
+        // location:
+        byte tag = result[lastPos];
+        lastPos++;
+        long classId = getLongFromData(result);
+        long methodId = getLongFromData(result);
+        long codeIndex = getLongFromData(result);
+        Location location = new Location(tag, classId, methodId, codeIndex);
+        logger.info("frame location: " + location + " id: " + frameId);
+        notifier.notifyFrameInfoObtained(frameId);
         return responsePacket;
     }
 
@@ -128,8 +172,8 @@ public class ResponseProcessor extends Thread {
             long lineCodeIndex = getLongFromData(result);
             int lineNumber = getIntFromData(result);
             lineTable.addLine(lineCodeIndex, lineNumber);
-            responsePacket.setLineTable(lineTable);
         }
+        responsePacket.setLineTable(lineTable);
         notifier.notifyBreakpointInfoObtained(lineTable);
         return responsePacket;
     }
@@ -143,7 +187,7 @@ public class ResponseProcessor extends Thread {
             int modBits = getIntFromData(result);
             responsePacket.addMethod(methodID, methodName, methodSignature, modBits);
         }
-        notifier.notifyClassMethodsInfoObtained(classId, responsePacket.getMethods());
+        notifier.notifyClassMethodsInfoObtained(threadId, classId, responsePacket.getMethods());
         return responsePacket;
     }
 
@@ -171,6 +215,27 @@ public class ResponseProcessor extends Thread {
             int status = getIntFromData(result);
             responsePacket.addClass(refTypeTag, typeID, status);
         }
+        return responsePacket;
+    }
+
+    private ResponsePacket parseResponseVariableTable(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        int argCnt = getIntFromData(result);
+        int slots = getIntFromData(result);
+        VariableTable variableTable = new VariableTable();
+        variableTable.setArgCnt(argCnt);
+        variableTable.setSlots(slots);
+        for (int i = 0; i < slots; i++) {
+            long codeIndex = getLongFromData(result);
+            String name = getStringFromData(result);
+            String signature = getStringFromData(result);
+            int length = getIntFromData(result);
+            int slot = getIntFromData(result);
+            variableTable.addVariable(codeIndex, name, signature, length, slot);
+        }
+        responsePacket.setVariableTable(variableTable);
+        System.out.println(responsePacket);
+        // todo notify instead of printing
         return responsePacket;
     }
 
@@ -208,6 +273,7 @@ public class ResponseProcessor extends Thread {
 
         event.setStatus(getIntFromData(result));
         classId = event.getRefTypeId();
+        threadId = event.getThread();
         notifier.notifyClassLoaded(classId);
         return event;
     }
@@ -226,7 +292,7 @@ public class ResponseProcessor extends Thread {
         long codeIndex = getLongFromData(result);
         Location location = new Location(tag, classId, methodId, codeIndex);
         event.setLocation(location);
-        notifier.notifyBreakpointHit(requestId, threadId, location);
+        notifier.notifyBreakpointHit(threadId, location);
         return event;
     }
 

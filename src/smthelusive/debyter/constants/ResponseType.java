@@ -11,4 +11,7 @@ public class ResponseType {
     public static final int RESPONSE_TYPE_EVENT_REQUEST = 4;
     public static final int RESPONSE_TYPE_METHODS = 5;
     public static final int RESPONSE_TYPE_LINETABLE = 6;
+    public static final int RESPONSE_TYPE_VARIABLETABLE = 7;
+    public static final int RESPONSE_TYPE_FRAME_INFO = 8;
+    public static final int RESPONSE_TYPE_LOCAL_VARIABLES = 9;
 }

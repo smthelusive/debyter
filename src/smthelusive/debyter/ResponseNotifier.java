@@ -30,9 +30,9 @@ public class ResponseNotifier {
             listener.classIsLoaded(refTypeId);
     }
 
-    void notifyClassMethodsInfoObtained(long classId, List<AMethod> methods) {
+    void notifyClassMethodsInfoObtained(long threadId, long classId, List<AMethod> methods) {
         for (ResponseListener listener : listeners)
-            listener.classAndMethodsInfoObtained(classId, methods);
+            listener.classAndMethodsInfoObtained(threadId, classId, methods);
     }
 
     void notifyBreakpointInfoObtained(LineTable lineTable) {
@@ -40,9 +40,14 @@ public class ResponseNotifier {
             listener.breakpointInfoObtained(lineTable);
     }
 
-    void notifyBreakpointHit(int requestId, long threadId, Location location) {
+    void notifyBreakpointHit(long threadId, Location location) {
         for (ResponseListener listener : listeners)
-            listener.breakPointHit(requestId, threadId, location);
+            listener.breakPointHit(threadId, location);
+    }
+
+    void notifyFrameInfoObtained(long frameId) {
+        for (ResponseListener listener : listeners)
+            listener.frameIdObtained(frameId);
     }
 
 }

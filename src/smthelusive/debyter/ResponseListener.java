@@ -8,7 +8,8 @@ public interface ResponseListener {
     void incomingPacket(ResponsePacket incomingPacket);
     void finish();
     void classIsLoaded(long refTypeId);
-    void classAndMethodsInfoObtained(long classId, List<AMethod> methods);
+    void classAndMethodsInfoObtained(long threadId, long classId, List<AMethod> methods);
     void breakpointInfoObtained(LineTable lineTable);
-    void breakPointHit(int requestId, long threadId, Location location);
+    void breakPointHit(long threadId, Location location);
+    void frameIdObtained(long frameId);
 }

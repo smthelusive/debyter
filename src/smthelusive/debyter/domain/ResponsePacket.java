@@ -18,12 +18,22 @@ public class ResponsePacket {
     private ArrayList<AMethod> methods;
     private LineTable lineTable;
 
+    private VariableTable variableTable;
+
     public LineTable getLineTable() {
         return lineTable;
     }
 
     public void setLineTable(LineTable lineTable) {
         this.lineTable = lineTable;
+    }
+
+    public VariableTable getVariableTable() {
+        return variableTable;
+    }
+
+    public void setVariableTable(VariableTable variableTable) {
+        this.variableTable = variableTable;
     }
 
     public int getLength() {
@@ -127,6 +137,8 @@ public class ResponsePacket {
                 ", responseType=" + responseType +
                 ", classes=" + classes +
                 ", methods=" + methods +
+                ", lineTable=" + lineTable +
+                ", variableTable=" + variableTable +
                 '}';
     }
 }

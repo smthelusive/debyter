@@ -1,24 +1,24 @@
 package smthelusive.debyter.domain;
 
-import java.util.Arrays;
 import java.util.LinkedList;
-import java.util.List;
 
 import static smthelusive.debyter.Utils.*;
+import static smthelusive.debyter.constants.Constants.EMPTY_PACKET_SIZE;
+import static smthelusive.debyter.constants.Constants.INTEGER_LENGTH_BYTES;
 
 public class Packet {
     private final LinkedList<Byte> bytes = new LinkedList<>();
 
     public Packet(int id, int flags, int commandSet, int command) {
-        setLength(11);
+        setLength(EMPTY_PACKET_SIZE);
         setID(id);
         setFlagCmdSetCmd(flags, commandSet, command);
     }
 
     private void setLength(int length) {
         byte[] lengthBytes = getBytesOfInt(length);
-        for (int i = 0; i < 4; i++) {
-            if (bytes.size() >= 4)
+        for (int i = 0; i < INTEGER_LENGTH_BYTES; i++) {
+            if (bytes.size() >= INTEGER_LENGTH_BYTES)
                 bytes.set(i, lengthBytes[i]);
             else bytes.add(i, lengthBytes[i]);
         }

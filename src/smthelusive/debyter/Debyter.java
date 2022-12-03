@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import smthelusive.debyter.constants.ModKind;
 import smthelusive.debyter.constants.SuspendPolicy;
+import smthelusive.debyter.constants.Type;
 import smthelusive.debyter.constants.TypeTag;
 import smthelusive.debyter.domain.*;
 
@@ -27,6 +28,7 @@ public class Debyter implements ResponseListener {
     private static OutputStream out;
     private static InputStream in;
     private long classId;
+    private long threadId;
     private long methodId;
 
     private static boolean keepProcessing = true;
@@ -197,22 +199,66 @@ public class Debyter implements ResponseListener {
         }
     }
 
-    /*
-    this returns info to be able to map bytecode operation indices to java code line numbers
-     */
-    private void requestLineTableInfo(long classId, long methodId) {
+    private void requestCurrentFrameInfo(long threadId) {
+        int id = getNewUniqueId();
+        responseProcessor.requestIsSent(id, RESPONSE_TYPE_FRAME_INFO);
+        Packet packet = new Packet(id, EMPTY_FLAGS, THREAD_REFERENCE_COMMAND_SET, FRAMES);
+        packet.addDataAsLong(threadId);
+        packet.addDataAsInt(0); // current frame
+        packet.addDataAsInt(1); // amount of frames to retrieve
         try {
+            out.write(packet.getPacketBytes());
+            out.flush();
+        } catch (IOException ioe) {
+            logger.error(ioe.getMessage());
+        }
+    }
+
+    // todo later rewrite to get more variables at a time, now it's for testing only
+    private void requestLocalVariable(long threadId, long frameId) {
+        int id = getNewUniqueId();
+        responseProcessor.requestIsSent(id, RESPONSE_TYPE_LOCAL_VARIABLES);
+        Packet packet = new Packet(id, EMPTY_FLAGS, STACK_FRAME_COMMAND_SET, GET_VALUES);
+        packet.addDataAsLong(threadId);
+        packet.addDataAsLong(frameId);
+        packet.addDataAsInt(1); // amount of variables
+        packet.addDataAsInt(1); // index in locals array
+        packet.addDataAsByte(Type.INT);
+        try {
+            out.write(packet.getPacketBytes());
+            out.flush();
+        } catch (IOException ioe) {
+            logger.error(ioe.getMessage());
+        }
+    }
+
+    /*
+    Either line table or variable table
+     */
+    private void requestTableInfo(long classId, long methodId, int cmd) {
+        try {
+            int responseType = cmd == LINETABLE_CMD ? RESPONSE_TYPE_LINETABLE : RESPONSE_TYPE_VARIABLETABLE;
             int id = getNewUniqueId();
-            responseProcessor.requestIsSent(id, RESPONSE_TYPE_LINETABLE);
-            Packet packet = new Packet(id, EMPTY_FLAGS, METHOD_COMMAND_SET, LINETABLE_CMD);
+            responseProcessor.requestIsSent(id, responseType);
+            Packet packet = new Packet(id, EMPTY_FLAGS, METHOD_COMMAND_SET, cmd);
             packet.addDataAsLong(classId);
             packet.addDataAsLong(methodId);
             out.write(packet.getPacketBytes());
             out.flush();
         } catch (Exception e) {
-            logger.error("something went wrong during requesting the line table: " + e.getMessage());
+            logger.error("something went wrong during requesting the table: " + e.getMessage());
         }
+    }
 
+    /*
+    this returns info to be able to map bytecode operation indices to java code line numbers
+     */
+    private void requestLineTableInfo(long classId, long methodId) {
+        requestTableInfo(classId, methodId, LINETABLE_CMD);
+    }
+
+    private void requestVariableTableInfo(long classId, long methodId) {
+        requestTableInfo(classId, methodId, VARIABLETABLE_CMD);
     }
 
     @Override
@@ -239,26 +285,34 @@ public class Debyter implements ResponseListener {
     }
 
     @Override
-    public void classAndMethodsInfoObtained(long classId, List<AMethod> methods) {
+    public void classAndMethodsInfoObtained(long threadId, long classId, List<AMethod> methods) {
         logger.info("class id:" + classId);
         methods.forEach(methodId -> logger.info(methodId.toString()));
         long methodId = methods.stream()
-                .filter(method -> method.getName().equals("main"))
-                .findAny().map(AMethod::getMethodId).get();
+                .filter(method -> method.name().equals("main"))
+                .findAny().map(AMethod::methodId).orElse(0L);
         this.classId = classId;
         this.methodId = methodId;
+        this.threadId = threadId;
         requestLineTableInfo(classId, methodId);
     }
 
     @Override
-    public void breakPointHit(int requestId, long threadId, Location location) {
+    public void breakPointHit(long threadId, Location location) {
         logger.info("BREAKPOINT HIT: " + location);
+        requestCurrentFrameInfo(threadId);
+    }
+
+    @Override
+    public void frameIdObtained(long frameId) {
+        logger.info("FRAME ID: " + frameId);
+        requestLocalVariable(threadId, frameId);
     }
 
     @Override
     public void breakpointInfoObtained(LineTable lineTable) {
         logger.info(lineTable.toString());
-        setBreakPoint(classId, methodId, 5);
+        setBreakPoint(classId, methodId, 15);
         resume();
     }
 }
