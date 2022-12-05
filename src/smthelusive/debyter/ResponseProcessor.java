@@ -13,9 +13,9 @@ import java.util.*;
 import static smthelusive.debyter.Utils.byteArrayToInteger;
 import static smthelusive.debyter.constants.Command.COMPOSITE_EVENT_CMD;
 import static smthelusive.debyter.constants.CommandSet.EVENT_COMMAND_SET;
+import static smthelusive.debyter.constants.EventKind.*;
 import static smthelusive.debyter.constants.ResponseType.*;
 import static smthelusive.debyter.constants.Constants.*;
-import static smthelusive.debyter.domain.EventKind.*;
 
 public class ResponseProcessor extends Thread {
     private final InputStream inputStream;
@@ -65,7 +65,6 @@ public class ResponseProcessor extends Thread {
 
     private ResponsePacket parseResponseIntoPacket(byte[] result) {
         lastPos = 0;
-        logger.info(new String(result));
         ResponsePacket responsePacket = new ResponsePacket(); // todo make a responsepacket builder
         int length = result.length + INTEGER_LENGTH_BYTES;
         int idValue = getIntFromData(result);
@@ -86,36 +85,24 @@ public class ResponseProcessor extends Thread {
                 type = Optional.ofNullable(requestsSent.get(idValue)).orElse(0);
             }
         }
-        switch (type) {
-            case RESPONSE_TYPE_CLASS_INFO:
-                responsePacket = parseResponseClassInfo(result);
-                break;
-            case RESPONSE_TYPE_ALL_CLASSES:
-                responsePacket = parseResponseAllClasses(result);
-                break;
-            case RESPONSE_TYPE_COMPOSITE_EVENT:
-                if (errorCode == 0) responsePacket = parseCompositeEvent(result);
-                break;
-            case RESPONSE_TYPE_EVENT_REQUEST:
-                int requestId = getIntFromData(result);
-                requestIsSent(idValue, requestId);
-                break;
-            case RESPONSE_TYPE_LINETABLE:
-                responsePacket = parseResponseLinetable(result);
-                break;
-            case RESPONSE_TYPE_METHODS:
-                responsePacket = parseResponseMethods(result);
-                break;
-            case RESPONSE_TYPE_VARIABLETABLE:
-                responsePacket = parseResponseVariableTable(result);
-                break;
-            case RESPONSE_TYPE_FRAME_INFO:
-                responsePacket = parseResponseFrame(result);
-                break;
-            case RESPONSE_TYPE_LOCAL_VARIABLES:
-                responsePacket = parseResponseVariable(result);
-                break;
-            default: logger.info(Arrays.toString(result));
+        if (errorCode == 0) {
+            switch (type) {
+                case RESPONSE_TYPE_CLASS_INFO -> responsePacket = parseResponseClassInfo(result);
+                case RESPONSE_TYPE_ALL_CLASSES -> responsePacket = parseResponseAllClasses(result);
+                case RESPONSE_TYPE_ID_SIZES -> responsePacket = parseResponseIdSizes(result);
+                case RESPONSE_TYPE_COMPOSITE_EVENT -> responsePacket = parseCompositeEvent(result);
+                case RESPONSE_TYPE_EVENT_REQUEST -> {
+                    int requestId = getIntFromData(result);
+                    requestIsSent(idValue, requestId);
+                }
+                case RESPONSE_TYPE_LINETABLE -> responsePacket = parseResponseLinetable(result);
+                case RESPONSE_TYPE_METHODS -> responsePacket = parseResponseMethods(result);
+                case RESPONSE_TYPE_VARIABLETABLE -> responsePacket = parseResponseVariableTable(result);
+                case RESPONSE_TYPE_FRAME_INFO -> responsePacket = parseResponseFrame(result);
+                case RESPONSE_TYPE_LOCAL_VARIABLES -> responsePacket = parseResponseVariables(result);
+                default -> {
+                }
+            }
         }
         responsePacket.setResponseType(type);
         responsePacket.setLength(length);
@@ -125,20 +112,36 @@ public class ResponseProcessor extends Thread {
         return responsePacket;
     }
 
-    private ResponsePacket parseResponseVariable(byte[] result) {
+    private ResponsePacket parseResponseVariables(byte[] result) {
         ResponsePacket responsePacket = new ResponsePacket();
         int amountOfValues = getIntFromData(result);
-        if (amountOfValues != 1) logger.error("invalid amount of values received");
-        byte type = result[lastPos];
-        lastPos++;
-        switch (type) {
-            case Type.INT:
-                int value = getIntFromData(result);
-                logger.info("the value is: " + value);
-                break;
-            default:
-                logger.error("something unexpected happened");
+        for (int i = 0; i < amountOfValues; i++) {
+            byte type = result[lastPos];
+            lastPos++;
+            switch (type) {
+                case Type.INT -> {
+                    int value = getIntFromData(result);
+                    logger.info("integer, slot " + i + " is: " + value);
+                }
+                case Type.ARRAY -> {
+                    long arrayRef = getLongFromData(result);
+                    logger.info("array, slot " + i + " is: " + arrayRef);
+                }
+                case Type.STRING -> {
+                    long stringReference = getLongFromData(result);
+                    logger.info("string reference, slot " + i + " is: " + stringReference);
+                }
+                case Type.OBJECT -> {
+                    long objectReference = getLongFromData(result);
+                    logger.info("object reference, slot " + i + " is: " + objectReference);
+                }
+                default ->
+                    // todo test it also on WIP file
+                        logger.error("something unexpected received");
+            }
         }
+
+        notifier.notifyLocalVariablesObtained();
         return responsePacket;
     }
 
@@ -154,7 +157,7 @@ public class ResponseProcessor extends Thread {
         long methodId = getLongFromData(result);
         long codeIndex = getLongFromData(result);
         Location location = new Location(tag, classId, methodId, codeIndex);
-        logger.info("frame location: " + location + " id: " + frameId);
+//        logger.info("frame location: " + location + " id: " + frameId);
         notifier.notifyFrameInfoObtained(frameId);
         return responsePacket;
     }
@@ -177,6 +180,7 @@ public class ResponseProcessor extends Thread {
         notifier.notifyBreakpointInfoObtained(lineTable);
         return responsePacket;
     }
+
     private ResponsePacket parseResponseMethods(byte[] result) {
         ResponsePacket responsePacket = new ResponsePacket();
         int amountOfMethods = getIntFromData(result);
@@ -218,6 +222,22 @@ public class ResponseProcessor extends Thread {
         return responsePacket;
     }
 
+    private ResponsePacket parseResponseIdSizes(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        int fieldIDSize = getIntFromData(result);
+        int methodIDSize = getIntFromData(result);
+        int objectIDSize = getIntFromData(result);
+        int referenceTypeIDSize = getIntFromData(result);
+        int frameIDSize = getIntFromData(result);
+        responsePacket.setFieldIDSize(fieldIDSize);
+        responsePacket.setMethodIDSize(methodIDSize);
+        responsePacket.setObjectIDSize(objectIDSize);
+        responsePacket.setReferenceTypeIDSize(referenceTypeIDSize);
+        responsePacket.setFrameIDSize(frameIDSize);
+        logger.info("id sizes: \n objectIdSize: " + objectIDSize);
+        return responsePacket;
+    }
+
     private ResponsePacket parseResponseVariableTable(byte[] result) {
         ResponsePacket responsePacket = new ResponsePacket();
         int argCnt = getIntFromData(result);
@@ -234,8 +254,8 @@ public class ResponseProcessor extends Thread {
             variableTable.addVariable(codeIndex, name, signature, length, slot);
         }
         responsePacket.setVariableTable(variableTable);
-        System.out.println(responsePacket);
-        // todo notify instead of printing
+//        logger.info("got variable table: " + variableTable);
+        notifier.notifyVariableTableObtained(variableTable);
         return responsePacket;
     }
 
@@ -250,9 +270,12 @@ public class ResponseProcessor extends Thread {
             byte eventKind = result[lastPos];
             lastPos++;
             switch (eventKind) {
-                case VM_DEATH -> logger.error("Event VM_DEATH was raised");
-                case CLASS_PREPARE -> responsePacket.addEvent(parseClassPrepareEvent(result));
-                case BREAKPOINT -> responsePacket.addEvent(parseBreakpointEvent(result));
+                case EVENT_KIND_VM_DEATH -> logger.error("Event VM_DEATH was raised");
+                case EVENT_KIND_CLASS_PREPARE -> responsePacket.addEvent(parseClassPrepareEvent(result));
+                case EVENT_KIND_BREAKPOINT ->
+                        responsePacket.addEvent(parseBreakpointEvent(result, EVENT_KIND_BREAKPOINT));
+                case EVENT_KIND_SINGLE_STEP ->
+                        responsePacket.addEvent(parseBreakpointEvent(result, EVENT_KIND_SINGLE_STEP));
             }
         }
         return responsePacket;
@@ -260,7 +283,7 @@ public class ResponseProcessor extends Thread {
 
     private Event parseClassPrepareEvent(byte[] result) {
         Event event = new Event();
-        event.setEventKind(CLASS_PREPARE);
+        event.setEventKind(EVENT_KIND_CLASS_PREPARE);
         event.setRequestID(getIntFromData(result));
         event.setThread(getLongFromData(result));
         byte refTypeTag = result[lastPos];
@@ -278,9 +301,9 @@ public class ResponseProcessor extends Thread {
         return event;
     }
 
-    private Event parseBreakpointEvent(byte[] result) {
+    private Event parseBreakpointEvent(byte[] result, byte eventKind) {
         Event event = new Event();
-        event.setEventKind(BREAKPOINT);
+        event.setEventKind(eventKind);
         int requestId = getIntFromData(result);
         event.setRequestID(requestId);
         long threadId = getLongFromData(result);

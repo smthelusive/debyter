@@ -1,9 +1,6 @@
 package smthelusive.debyter;
 
-import smthelusive.debyter.domain.AMethod;
-import smthelusive.debyter.domain.LineTable;
-import smthelusive.debyter.domain.Location;
-import smthelusive.debyter.domain.ResponsePacket;
+import smthelusive.debyter.domain.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,9 +32,14 @@ public class ResponseNotifier {
             listener.classAndMethodsInfoObtained(threadId, classId, methods);
     }
 
+    void notifyVariableTableObtained(VariableTable variableTable) {
+        for (ResponseListener listener : listeners)
+            listener.variableTableObtained(variableTable);
+    }
+
     void notifyBreakpointInfoObtained(LineTable lineTable) {
         for (ResponseListener listener : listeners)
-            listener.breakpointInfoObtained(lineTable);
+            listener.lineTableObtained(lineTable);
     }
 
     void notifyBreakpointHit(long threadId, Location location) {
@@ -48,6 +50,10 @@ public class ResponseNotifier {
     void notifyFrameInfoObtained(long frameId) {
         for (ResponseListener listener : listeners)
             listener.frameIdObtained(frameId);
+    }
+    void notifyLocalVariablesObtained() {
+        for (ResponseListener listener : listeners)
+            listener.variablesReceived();
     }
 
 }

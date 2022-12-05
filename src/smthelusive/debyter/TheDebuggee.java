@@ -13,3 +13,8 @@ public class TheDebuggee {
 }
 // java -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:8000 smthelusive/debyter/TheDebuggee
 // -Xlog:class+load=info:log.txt
+
+// todo: parse strings and arrays properly
+// todo stop when the last line is met (maybe when the method exit event happens)
+// todo improve logging
+// todo test it with WIP file

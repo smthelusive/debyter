@@ -20,6 +20,12 @@ public class ResponsePacket {
 
     private VariableTable variableTable;
 
+    private int fieldIDSize;
+    private int methodIDSize;
+    private int objectIDSize;
+    private int referenceTypeIDSize;
+    private int frameIDSize;
+
     public LineTable getLineTable() {
         return lineTable;
     }
@@ -124,6 +130,46 @@ public class ResponsePacket {
         methods.add(aMethod);
     }
 
+    public int getFieldIDSize() {
+        return fieldIDSize;
+    }
+
+    public void setFieldIDSize(int fieldIDSize) {
+        this.fieldIDSize = fieldIDSize;
+    }
+
+    public int getMethodIDSize() {
+        return methodIDSize;
+    }
+
+    public void setMethodIDSize(int methodIDSize) {
+        this.methodIDSize = methodIDSize;
+    }
+
+    public int getObjectIDSize() {
+        return objectIDSize;
+    }
+
+    public void setObjectIDSize(int objectIDSize) {
+        this.objectIDSize = objectIDSize;
+    }
+
+    public int getReferenceTypeIDSize() {
+        return referenceTypeIDSize;
+    }
+
+    public void setReferenceTypeIDSize(int referenceTypeIDSize) {
+        this.referenceTypeIDSize = referenceTypeIDSize;
+    }
+
+    public int getFrameIDSize() {
+        return frameIDSize;
+    }
+
+    public void setFrameIDSize(int frameIDSize) {
+        this.frameIDSize = frameIDSize;
+    }
+
     @Override
     public String toString() {
         return "ResponsePacket{" +
@@ -139,6 +185,11 @@ public class ResponsePacket {
                 ", methods=" + methods +
                 ", lineTable=" + lineTable +
                 ", variableTable=" + variableTable +
+                ", fieldIDSize=" + fieldIDSize +
+                ", methodIDSize=" + methodIDSize +
+                ", objectIDSize=" + objectIDSize +
+                ", referenceTypeIDSize=" + referenceTypeIDSize +
+                ", frameIDSize=" + frameIDSize +
                 '}';
     }
 }

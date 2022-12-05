@@ -2,10 +2,7 @@ package smthelusive.debyter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import smthelusive.debyter.constants.ModKind;
-import smthelusive.debyter.constants.SuspendPolicy;
-import smthelusive.debyter.constants.Type;
-import smthelusive.debyter.constants.TypeTag;
+import smthelusive.debyter.constants.*;
 import smthelusive.debyter.domain.*;
 
 import java.io.*;
@@ -16,8 +13,7 @@ import java.util.List;
 
 import static smthelusive.debyter.constants.Command.*;
 import static smthelusive.debyter.constants.CommandSet.*;
-import static smthelusive.debyter.constants.EventKind.EVENT_KIND_BREAKPOINT;
-import static smthelusive.debyter.constants.EventKind.EVENT_KIND_CLASS_PREPARE;
+import static smthelusive.debyter.constants.EventKind.*;
 import static smthelusive.debyter.constants.ResponseType.*;
 import static smthelusive.debyter.constants.Constants.*;
 import static smthelusive.debyter.Utils.*;
@@ -30,11 +26,15 @@ public class Debyter implements ResponseListener {
     private long classId;
     private long threadId;
     private long methodId;
+    private boolean stepping;
 
+    private VariableTable variableTable;
+    private Location location;
     private static boolean keepProcessing = true;
     private static final Logger logger = LoggerFactory.getLogger(Debyter.class);
 
     private static int id = 0;
+    private static final int BREAKPOINT_LOCATION = 0;
     private static ResponseProcessor responseProcessor;
 
     private static int getNewUniqueId() {
@@ -49,6 +49,7 @@ public class Debyter implements ResponseListener {
         notifier.addListener(debyter);
         responseProcessor = new ResponseProcessor(in, notifier);
         responseProcessor.start();
+//        requestClassPrepareEvent("WIP");
         requestClassPrepareEvent("smthelusive.debyter.TheDebuggee");
         resume();
 //        keepProcessing = false;
@@ -62,6 +63,14 @@ public class Debyter implements ResponseListener {
         CLASSES_BY_SIGNATURE_CMD,
         signature,
         RESPONSE_TYPE_CLASS_INFO);
+    }
+
+    public static void idSizes() throws Exception {
+        sendEmptyPacket(getNewUniqueId(),
+                EMPTY_FLAGS,
+                VIRTUAL_MACHINE_COMMAND_SET,
+                ID_SIZES_CMD,
+                RESPONSE_TYPE_ID_SIZES); // success
     }
 
     public static void allClasses() throws Exception {
@@ -183,7 +192,25 @@ public class Debyter implements ResponseListener {
         } catch (Exception e) {
             System.err.println("something went wrong during setting the breakpoint");
         }
+    }
 
+    public static void requestStepOverEvent(long threadId) {
+        try {
+            int id = getNewUniqueId();
+            responseProcessor.requestIsSent(id, RESPONSE_TYPE_SINGLE_STEP);
+            Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
+            packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
+            packet.addDataAsByte(SuspendPolicy.ALL);
+            packet.addDataAsInt(1); // modifiers
+            packet.addDataAsByte(ModKind.STEP);
+            packet.addDataAsLong(threadId);
+            packet.addDataAsInt(Step.STEP_MIN);
+            packet.addDataAsInt(Step.STEP_OVER);
+            out.write(packet.getPacketBytes());
+            out.flush();
+        } catch (Exception e) {
+            logger.error("something went wrong during requesting step over");
+        }
     }
 
     private void requestMethodsOfClassInfo(long typeID) {
@@ -214,16 +241,18 @@ public class Debyter implements ResponseListener {
         }
     }
 
-    // todo later rewrite to get more variables at a time, now it's for testing only
-    private void requestLocalVariable(long threadId, long frameId) {
+    private void requestLocalVariables(long threadId, long frameId, List<Variable> variables) {
         int id = getNewUniqueId();
         responseProcessor.requestIsSent(id, RESPONSE_TYPE_LOCAL_VARIABLES);
         Packet packet = new Packet(id, EMPTY_FLAGS, STACK_FRAME_COMMAND_SET, GET_VALUES);
         packet.addDataAsLong(threadId);
         packet.addDataAsLong(frameId);
-        packet.addDataAsInt(1); // amount of variables
-        packet.addDataAsInt(1); // index in locals array
-        packet.addDataAsByte(Type.INT);
+        packet.addDataAsInt(variables.size()); // amount of variables
+        for (Variable variable: variables) {
+            packet.addDataAsInt(variable.slot()); // index in locals array
+            packet.addDataAsByte(Type.getTypeBySignature(variable.signature()));
+        }
+
         try {
             out.write(packet.getPacketBytes());
             out.flush();
@@ -276,7 +305,7 @@ public class Debyter implements ResponseListener {
 
     @Override
     public void classIsLoaded(long refTypeId) {
-        logger.info("class id:" + refTypeId);
+//        logger.info("class id:" + refTypeId);
         try {
             requestMethodsOfClassInfo(refTypeId);
         } catch (Exception e) {
@@ -286,7 +315,7 @@ public class Debyter implements ResponseListener {
 
     @Override
     public void classAndMethodsInfoObtained(long threadId, long classId, List<AMethod> methods) {
-        logger.info("class id:" + classId);
+//        logger.info("class id:" + classId);
         methods.forEach(methodId -> logger.info(methodId.toString()));
         long methodId = methods.stream()
                 .filter(method -> method.name().equals("main"))
@@ -300,19 +329,44 @@ public class Debyter implements ResponseListener {
     @Override
     public void breakPointHit(long threadId, Location location) {
         logger.info("BREAKPOINT HIT: " + location);
-        requestCurrentFrameInfo(threadId);
+        this.location = location;
+        if (variableTable == null) {
+            requestVariableTableInfo(classId, methodId);
+        } else {
+            requestCurrentFrameInfo(threadId);
+        }
     }
 
     @Override
     public void frameIdObtained(long frameId) {
-        logger.info("FRAME ID: " + frameId);
-        requestLocalVariable(threadId, frameId);
+//        logger.info("FRAME ID: " + frameId);
+        List<Variable> visibleVariables = variableTable.getVariables().stream()
+                .filter(variable -> location.codeIndex() > variable.codeIndex() &&
+                        location.codeIndex() < variable.codeIndex() + variable.length()).toList();
+        requestLocalVariables(threadId, frameId, visibleVariables);
     }
 
     @Override
-    public void breakpointInfoObtained(LineTable lineTable) {
+    public void lineTableObtained(LineTable lineTable) {
         logger.info(lineTable.toString());
-        setBreakPoint(classId, methodId, 15);
+        setBreakPoint(classId, methodId, BREAKPOINT_LOCATION);
+        resume();
+    }
+
+    @Override
+    public void variableTableObtained(VariableTable variableTable) {
+//        logger.info("variable table: " + variableTable.toString());
+        this.variableTable = variableTable;
+        requestCurrentFrameInfo(threadId);
+    }
+
+    @Override
+    public void variablesReceived() {
+//        logger.info("requesting step over...");
+        if (!stepping) {
+            requestStepOverEvent(threadId);
+            stepping = true;
+        }
         resume();
     }
 }

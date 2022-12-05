@@ -9,7 +9,10 @@ public interface ResponseListener {
     void finish();
     void classIsLoaded(long refTypeId);
     void classAndMethodsInfoObtained(long threadId, long classId, List<AMethod> methods);
-    void breakpointInfoObtained(LineTable lineTable);
+    void lineTableObtained(LineTable lineTable);
+    void variableTableObtained(VariableTable variableTable);
     void breakPointHit(long threadId, Location location);
     void frameIdObtained(long frameId);
+
+    void variablesReceived();
 }

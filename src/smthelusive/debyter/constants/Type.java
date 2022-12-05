@@ -17,4 +17,25 @@ public class Type {
     public static final int THREAD_GROUP = 103;
     public static final int CLASS_LOADER = 108;
     public static final int CLASS_OBJECT = 99;
+
+    public static int getTypeBySignature(String signature) {
+        return switch (signature) {
+            case "[", "[Ljava/lang/String;" -> ARRAY;
+            case "B" -> BYTE;
+            case "C" -> CHAR;
+            case "F" -> FLOAT;
+            case "D" -> DOUBLE;
+            case "I" -> INT;
+            case "J" -> LONG;
+            case "S" -> SHORT;
+            case "V" -> VOID;
+            case "Z" -> BOOLEAN;
+            case "s" -> STRING;
+            case "t" -> THREAD;
+            case "g" -> THREAD_GROUP;
+            case "l" -> CLASS_LOADER;
+            case "c" -> CLASS_OBJECT;
+            default -> OBJECT;
+        };
+    }
 }
