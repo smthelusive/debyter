@@ -13,6 +13,6 @@ public interface ResponseListener {
     void variableTableObtained(VariableTable variableTable);
     void breakPointHit(long threadId, Location location);
     void frameIdObtained(long frameId);
-
     void variablesReceived();
+    void bytecodesReceived(byte[] bytecodes);
 }

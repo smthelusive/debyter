@@ -16,4 +16,5 @@ public class ResponseType {
     public static final int RESPONSE_TYPE_LOCAL_VARIABLES = 9;
     public static final int RESPONSE_TYPE_SINGLE_STEP = 10;
     public static final int RESPONSE_TYPE_ID_SIZES = 11;
+    public static final int RESPONSE_TYPE_BYTECODES = 12;
 }

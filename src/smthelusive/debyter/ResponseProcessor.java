@@ -100,6 +100,7 @@ public class ResponseProcessor extends Thread {
                 case RESPONSE_TYPE_VARIABLETABLE -> responsePacket = parseResponseVariableTable(result);
                 case RESPONSE_TYPE_FRAME_INFO -> responsePacket = parseResponseFrame(result);
                 case RESPONSE_TYPE_LOCAL_VARIABLES -> responsePacket = parseResponseVariables(result);
+                case RESPONSE_TYPE_BYTECODES -> responsePacket = parseResponseBytecodes(result);
                 default -> {
                 }
             }
@@ -109,6 +110,19 @@ public class ResponseProcessor extends Thread {
         responsePacket.setId(idValue);
         responsePacket.setFlag(flag);
         responsePacket.setErrorCode(errorCode);
+        return responsePacket;
+    }
+
+    private ResponsePacket parseResponseBytecodes(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        int amountOfBytes = getIntFromData(result);
+        byte[] bytes = new byte[amountOfBytes];
+        for (int i = 0; i < bytes.length; i++) {
+            byte value = result[lastPos];
+            lastPos++;
+            bytes[i] = value;
+        }
+        notifier.notifyBytecodesObtained(bytes);
         return responsePacket;
     }
 
@@ -135,9 +149,7 @@ public class ResponseProcessor extends Thread {
                     long objectReference = getLongFromData(result);
                     logger.info("object reference, slot " + i + " is: " + objectReference);
                 }
-                default ->
-                    // todo test it also on WIP file
-                        logger.error("something unexpected received");
+                default -> logger.error("something unexpected received");
             }
         }
 

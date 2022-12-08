@@ -56,4 +56,9 @@ public class ResponseNotifier {
             listener.variablesReceived();
     }
 
+    void notifyBytecodesObtained(byte[] bytecodes) {
+        for (ResponseListener listener : listeners)
+            listener.bytecodesReceived(bytecodes);
+    }
+
 }
