@@ -1,6 +1,7 @@
 package smthelusive.debyter.domain;
 
 import java.util.ArrayList;
+import java.util.List;
 
 public class ResponsePacket {
     // header:
@@ -12,19 +13,53 @@ public class ResponsePacket {
     private byte suspendPolicy;
     private int events;
     private ArrayList<Event> eventsList;
-
     private int responseType;
+    private EventType eventType;
     private ArrayList<AClass> classes;
     private ArrayList<AMethod> methods;
     private LineTable lineTable;
 
     private VariableTable variableTable;
+    private List<GenericVariable> variableValues = new ArrayList<>();
 
     private int fieldIDSize;
     private int methodIDSize;
     private int objectIDSize;
     private int referenceTypeIDSize;
     private int frameIDSize;
+    private long frameId;
+
+    private byte[] bytecodes;
+
+    private Location location;
+
+    public List<GenericVariable> getVariableValues() {
+        return variableValues;
+    }
+
+    public void addVariableValue(GenericVariable variableValue) {
+        variableValues.add(variableValue);
+    }
+
+    public byte[] getBytecodes() {
+        return bytecodes;
+    }
+
+    public void setBytecodes(byte[] bytecodes) {
+        this.bytecodes = bytecodes;
+    }
+
+    public void setLocation(Location location) {
+        this.location = location;
+    }
+
+    public long getFrameId() {
+        return frameId;
+    }
+
+    public void setFrameId(long frameId) {
+        this.frameId = frameId;
+    }
 
     public LineTable getLineTable() {
         return lineTable;
@@ -181,6 +216,7 @@ public class ResponsePacket {
                 ", events=" + events +
                 ", eventsList=" + eventsList +
                 ", responseType=" + responseType +
+                ", concreteResponseType=" + eventType +
                 ", classes=" + classes +
                 ", methods=" + methods +
                 ", lineTable=" + lineTable +

@@ -18,6 +18,16 @@ public class Event {
     private int	status;
     private int fieldID;
 
+    private EventType internalEventType;
+
+    public EventType getInternalEventType() {
+        return internalEventType;
+    }
+
+    public void setInternalEventType(EventType internalEventType) {
+        this.internalEventType = internalEventType;
+    }
+
     public byte getEventKind() {
         return eventKind;
     }

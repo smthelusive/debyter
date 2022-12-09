@@ -14,8 +14,10 @@ import static smthelusive.debyter.Utils.byteArrayToInteger;
 import static smthelusive.debyter.constants.Command.COMPOSITE_EVENT_CMD;
 import static smthelusive.debyter.constants.CommandSet.EVENT_COMMAND_SET;
 import static smthelusive.debyter.constants.EventKind.*;
-import static smthelusive.debyter.constants.ResponseType.*;
 import static smthelusive.debyter.constants.Constants.*;
+import static smthelusive.debyter.constants.ResponseType.*;
+import static smthelusive.debyter.domain.EventType.CLASS_LOADED;
+import static smthelusive.debyter.domain.EventType.VM_DEATH;
 
 public class ResponseProcessor extends Thread {
     private final InputStream inputStream;
@@ -25,7 +27,7 @@ public class ResponseProcessor extends Thread {
     private int lastPos;
     private long classId;
     private long threadId;
-    private final ResponseNotifier notifier;
+    private final ResponseListener responseListener;
 
     public void requestIsSent(int id, int expectedResponseType) {
         requestsSent.put(id, expectedResponseType);
@@ -34,9 +36,9 @@ public class ResponseProcessor extends Thread {
     public void finishProcessing() {
         this.processingOn = false;
     }
-    public ResponseProcessor(InputStream in, ResponseNotifier notifier) {
+    public ResponseProcessor(InputStream in, ResponseListener responseListener) {
         this.inputStream = in;
-        this.notifier = notifier;
+        this.responseListener = responseListener;
     }
 
     /***
@@ -48,24 +50,24 @@ public class ResponseProcessor extends Thread {
         while (processingOn) {
             try {
                 byte[] intVal = inputStream.readNBytes(INTEGER_LENGTH_BYTES);
+                if (intVal.length < INTEGER_LENGTH_BYTES) continue; // don't know how but this happens
                 int replyLength = byteArrayToInteger(intVal);
                 int leftoverLengthToRead = replyLength - INTEGER_LENGTH_BYTES;
                 if (leftoverLengthToRead > 0) {
                     byte[] result = inputStream.readNBytes(leftoverLengthToRead);
                     ResponsePacket responsePacket = parseResponseIntoPacket(result);
-                    notifier.notifyAboutIncomingPacket(responsePacket);
+                    responseListener.incomingPacket(responsePacket);
                     requestsSent.remove(responsePacket.getId());
                 }
             } catch (IOException ioException) {
-                logger.error("exception while accepting the packet: " + ioException.getMessage());
+                logger.error("exception while accepting the packet: " + ioException);
             }
         }
-        notifier.notifyFinishedProcessing();
     }
 
     private ResponsePacket parseResponseIntoPacket(byte[] result) {
         lastPos = 0;
-        ResponsePacket responsePacket = new ResponsePacket(); // todo make a responsepacket builder
+        ResponsePacket responsePacket = new ResponsePacket();
         int length = result.length + INTEGER_LENGTH_BYTES;
         int idValue = getIntFromData(result);
         byte flag = result[lastPos];
@@ -94,6 +96,7 @@ public class ResponseProcessor extends Thread {
                 case RESPONSE_TYPE_EVENT_REQUEST -> {
                     int requestId = getIntFromData(result);
                     requestIsSent(idValue, requestId);
+                    responsePacket.setId(requestId);
                 }
                 case RESPONSE_TYPE_LINETABLE -> responsePacket = parseResponseLinetable(result);
                 case RESPONSE_TYPE_METHODS -> responsePacket = parseResponseMethods(result);
@@ -122,7 +125,7 @@ public class ResponseProcessor extends Thread {
             lastPos++;
             bytes[i] = value;
         }
-        notifier.notifyBytecodesObtained(bytes);
+        responsePacket.setBytecodes(bytes);
         return responsePacket;
     }
 
@@ -135,25 +138,27 @@ public class ResponseProcessor extends Thread {
             switch (type) {
                 case Type.INT -> {
                     int value = getIntFromData(result);
-                    logger.info("integer, slot " + i + " is: " + value);
+                    GenericVariable intValue = new IntVariable(value);
+                    responsePacket.addVariableValue(intValue);
                 }
                 case Type.ARRAY -> {
                     long arrayRef = getLongFromData(result);
+                    // todo
                     logger.info("array, slot " + i + " is: " + arrayRef);
                 }
                 case Type.STRING -> {
                     long stringReference = getLongFromData(result);
+                    // todo
                     logger.info("string reference, slot " + i + " is: " + stringReference);
                 }
                 case Type.OBJECT -> {
                     long objectReference = getLongFromData(result);
+                    // todo
                     logger.info("object reference, slot " + i + " is: " + objectReference);
                 }
                 default -> logger.error("something unexpected received");
             }
         }
-
-        notifier.notifyLocalVariablesObtained();
         return responsePacket;
     }
 
@@ -169,8 +174,9 @@ public class ResponseProcessor extends Thread {
         long methodId = getLongFromData(result);
         long codeIndex = getLongFromData(result);
         Location location = new Location(tag, classId, methodId, codeIndex);
-//        logger.info("frame location: " + location + " id: " + frameId);
-        notifier.notifyFrameInfoObtained(frameId);
+        logger.info("frame location: " + location + " id: " + frameId);
+        responsePacket.setFrameId(frameId);
+        responsePacket.setLocation(location);
         return responsePacket;
     }
 
@@ -189,7 +195,6 @@ public class ResponseProcessor extends Thread {
             lineTable.addLine(lineCodeIndex, lineNumber);
         }
         responsePacket.setLineTable(lineTable);
-        notifier.notifyBreakpointInfoObtained(lineTable);
         return responsePacket;
     }
 
@@ -203,7 +208,6 @@ public class ResponseProcessor extends Thread {
             int modBits = getIntFromData(result);
             responsePacket.addMethod(methodID, methodName, methodSignature, modBits);
         }
-        notifier.notifyClassMethodsInfoObtained(threadId, classId, responsePacket.getMethods());
         return responsePacket;
     }
 
@@ -266,8 +270,6 @@ public class ResponseProcessor extends Thread {
             variableTable.addVariable(codeIndex, name, signature, length, slot);
         }
         responsePacket.setVariableTable(variableTable);
-//        logger.info("got variable table: " + variableTable);
-        notifier.notifyVariableTableObtained(variableTable);
         return responsePacket;
     }
 
@@ -282,7 +284,7 @@ public class ResponseProcessor extends Thread {
             byte eventKind = result[lastPos];
             lastPos++;
             switch (eventKind) {
-                case EVENT_KIND_VM_DEATH -> logger.error("Event VM_DEATH was raised");
+                case EVENT_KIND_VM_DEATH -> responsePacket.addEvent(constructVMDeathEvent(result));
                 case EVENT_KIND_CLASS_PREPARE -> responsePacket.addEvent(parseClassPrepareEvent(result));
                 case EVENT_KIND_BREAKPOINT ->
                         responsePacket.addEvent(parseBreakpointEvent(result, EVENT_KIND_BREAKPOINT));
@@ -293,9 +295,18 @@ public class ResponseProcessor extends Thread {
         return responsePacket;
     }
 
+    private Event constructVMDeathEvent(byte[] result) {
+        Event vmDeathEvent = new Event();
+        vmDeathEvent.setEventKind(EVENT_KIND_VM_DEATH);
+        vmDeathEvent.setInternalEventType(VM_DEATH);
+        vmDeathEvent.setRequestID(getIntFromData(result));
+        return vmDeathEvent;
+    }
+
     private Event parseClassPrepareEvent(byte[] result) {
         Event event = new Event();
         event.setEventKind(EVENT_KIND_CLASS_PREPARE);
+        event.setInternalEventType(CLASS_LOADED);
         event.setRequestID(getIntFromData(result));
         event.setThread(getLongFromData(result));
         byte refTypeTag = result[lastPos];
@@ -309,13 +320,14 @@ public class ResponseProcessor extends Thread {
         event.setStatus(getIntFromData(result));
         classId = event.getRefTypeId();
         threadId = event.getThread();
-        notifier.notifyClassLoaded(classId);
         return event;
     }
 
     private Event parseBreakpointEvent(byte[] result, byte eventKind) {
         Event event = new Event();
         event.setEventKind(eventKind);
+        event.setInternalEventType(eventKind == EVENT_KIND_BREAKPOINT ?
+                EventType.BREAKPOINT_HIT : EventType.STEP_HIT);
         int requestId = getIntFromData(result);
         event.setRequestID(requestId);
         long threadId = getLongFromData(result);
@@ -327,7 +339,6 @@ public class ResponseProcessor extends Thread {
         long codeIndex = getLongFromData(result);
         Location location = new Location(tag, classId, methodId, codeIndex);
         event.setLocation(location);
-        notifier.notifyBreakpointHit(threadId, location);
         return event;
     }
 

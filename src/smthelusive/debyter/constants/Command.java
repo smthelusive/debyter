@@ -54,6 +54,8 @@ public class Command {
 
     // Commands set 15:
     public static final int SET_CMD = 1;
+    public static final int CLEAR_CMD = 2;
+    public static final int CLEAR_ALL_BREAKPOINTS_CMD = 3;
 
     // Commands set 16:
     public static final int GET_VALUES = 1;
