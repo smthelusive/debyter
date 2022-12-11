@@ -74,18 +74,15 @@ public class ResponseProcessor extends Thread {
         lastPos++;
         int type;
         short errorCode = 0;
-        if (result[lastPos] == EVENT_COMMAND_SET && result[lastPos + 1] == COMPOSITE_EVENT_CMD) { // composite event received
+        if (result[lastPos] == EVENT_COMMAND_SET &&
+                result[lastPos + 1] == COMPOSITE_EVENT_CMD) { // composite event received
             type = RESPONSE_TYPE_COMPOSITE_EVENT;
             lastPos += 2;
         } else {
             errorCode = getShortFromData(result);
-            if (Optional.ofNullable(requestsSent.get(idValue)).orElse(0)
-                    .equals(RESPONSE_TYPE_COMPOSITE_EVENT)) {
-                // received response for event request with another id
-                type = RESPONSE_TYPE_EVENT_REQUEST;
-            } else {
-                type = Optional.ofNullable(requestsSent.get(idValue)).orElse(0);
-            }
+            Integer storedResponseType = Optional.ofNullable(requestsSent.get(idValue)).orElse(0);
+            type = storedResponseType.equals(RESPONSE_TYPE_COMPOSITE_EVENT) ?
+                    RESPONSE_TYPE_EVENT_REQUEST : storedResponseType;
         }
         if (errorCode == 0) {
             switch (type) {
@@ -104,8 +101,7 @@ public class ResponseProcessor extends Thread {
                 case RESPONSE_TYPE_FRAME_INFO -> responsePacket = parseResponseFrame(result);
                 case RESPONSE_TYPE_LOCAL_VARIABLES -> responsePacket = parseResponseVariables(result);
                 case RESPONSE_TYPE_BYTECODES -> responsePacket = parseResponseBytecodes(result);
-                default -> {
-                }
+                default -> {}
             }
         }
         responsePacket.setResponseType(type);
