@@ -43,6 +43,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static final Logger logger = LoggerFactory.getLogger(Debyter.class);
     private static int id = 0;
     private static boolean userCanInteract = false;
+    private static boolean stepping = false;
 
     private static int getNewUniqueId() {
         return id++;
@@ -62,7 +63,6 @@ public class Debyter implements ResponseListener, UserInputListener {
         responseProcessor = new ResponseProcessor(in, debyter);
         responseProcessor.start();
         requestClassPrepareEvent(args[0]);
-
         while (keepProcessing) {
             processAllResponsePackets();
             if (userCanInteract) processAUserCommand();
@@ -82,7 +82,12 @@ public class Debyter implements ResponseListener, UserInputListener {
                                 Integer.parseInt(userCommand.params()[1]));
                     }
                 }
-                case STEP_OVER -> userRequestStepOver();
+                case STEP_OVER -> {
+                    if (!stepping) {
+                        requestStepOverEvent();
+                        stepping = true;
+                    }
+                }
                 case CLEAR -> userRequestClearBreakpoints();
                 case RESUME -> requestResume();
                 case EXIT -> requestVMDeathEvent();
@@ -93,14 +98,9 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static void processAllResponsePackets() {
         List<ResponsePacket> batch = new ArrayList<>();
         responsePackets.drainTo(batch);
-        for (ResponsePacket responsePacket: batch) {
-
+        batch.forEach(responsePacket -> {
             switch (responsePacket.getResponseType()) {
-                case RESPONSE_TYPE_COMPOSITE_EVENT -> {
-                    for (Event event: responsePacket.getEventsList()) {
-                        processEvent(event);
-                    }
-                }
+                case RESPONSE_TYPE_COMPOSITE_EVENT -> responsePacket.getEventsList().forEach(Debyter::processEvent);
                 case RESPONSE_TYPE_FRAME_INFO -> frameIdObtained(responsePacket.getFrameId());
                 case RESPONSE_TYPE_BYTECODES -> bytecodes = responsePacket.getBytecodes();
                 case RESPONSE_TYPE_VARIABLETABLE -> variableTable = responsePacket.getVariableTable();
@@ -110,15 +110,22 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case RESPONSE_TYPE_EVENT_REQUEST -> logger.info("event request registered");
                 case RESPONSE_TYPE_METHODS -> methodsInfoObtained(responsePacket.getMethods());
             }
-        }
+        });
     }
 
     private static void processEvent(Event event) {
         switch (event.getInternalEventType()) {
             case VM_DEATH -> vmDeathEventReceived();
-            case BREAKPOINT_HIT, STEP_HIT -> {
+            case BREAKPOINT_HIT -> {
                 location = event.getLocation();
                 breakPointHit(event.getThread(), location);
+            }
+            case STEP_HIT -> {
+                if (stepping) {
+                    location = event.getLocation();
+                    breakPointHit(event.getThread(), location);
+                    stepping = false;
+                }
             }
             case CLASS_LOADED -> {
                 threadId = event.getThread();
@@ -302,9 +309,9 @@ public class Debyter implements ResponseListener, UserInputListener {
             Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
             packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
             packet.addDataAsByte(SuspendPolicy.ALL);
-            packet.addDataAsInt(2); // modifiers
-            packet.addDataAsByte(ModKind.COUNT);
-            packet.addDataAsInt(1);
+            packet.addDataAsInt(1); // modifiers
+//            packet.addDataAsByte(ModKind.COUNT);
+//            packet.addDataAsInt(1);
             packet.addDataAsByte(ModKind.STEP);
             packet.addDataAsLong(threadId);
             packet.addDataAsInt(Step.STEP_MIN);
@@ -391,11 +398,6 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void requestVariableTableInfo(long classId, long methodId) {
         requestTableInfo(classId, methodId, VARIABLETABLE_CMD);
-    }
-
-    private static void userRequestStepOver() {
-        requestStepOverEvent();
-//        requestClearStepEvents();
     }
 
     private static void requestResume() {
