@@ -3,7 +3,7 @@ package smthelusive.debyter;
 public class TheDebuggee {
     public static void main(String[] args) {
         int a = 0;
-        a+=88;
+        a += 88;
         System.out.print(a);
         a--;
         a = a * a;
@@ -51,3 +51,7 @@ public static void main(java.lang.String[]);
 // todo: parse strings and arrays properly
 // todo stop when the last line is met (maybe when the method exit event happens)
 // todo test it with WIP file
+// todo do a nice logging
+// todo make sure that we don't get index out of bounds exception when mapping bytecode to location
+// todo parse vm start event
+// todo exit doesn't work
