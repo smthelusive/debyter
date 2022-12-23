@@ -135,29 +135,6 @@ public class ResponseProcessor extends Thread {
             long value = type == Type.INT ? getIntFromData(result) : getLongFromData(result);
             GenericVariable genericVariable = new GenericVariable(type, value);
             responsePacket.addVariable(genericVariable);
-//            switch (type) {
-//                case Type.INT -> {
-//                    long value = getIntFromData(result);
-//                    GenericVariable intValue = new IntVariable(value);
-//                    responsePacket.addVariableValue(intValue);
-//                }
-//                case Type.ARRAY | Type.STRING | Type.OBJECT -> {
-//                    long longRef = getLongFromData(result);
-//                    // todo
-//                    logger.info("array, slot " + i + " is: " + arrayRef);
-//                }
-//                case Type.STRING -> {
-//                    long stringReference = getLongFromData(result);
-//                    // todo
-//                    logger.info("string reference, slot " + i + " is: " + stringReference);
-//                }
-//                case Type.OBJECT -> {
-//                    long objectReference = getLongFromData(result);
-//                    // todo
-//                    logger.info("object reference, slot " + i + " is: " + objectReference);
-//                }
-//                default -> logger.error("something unexpected received");
-//            }
         }
         return responsePacket;
     }
