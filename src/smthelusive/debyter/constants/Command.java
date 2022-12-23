@@ -49,6 +49,9 @@ public class Command {
     public static final int VARIABLETABLE_CMD = 2;
     public static final int BYTECODES_CMD = 3;
 
+    // Command set 10:
+    public static final int STRING_VALUE_CMD = 1;
+
     // Command set 11:
     public static final int FRAMES = 6;
 

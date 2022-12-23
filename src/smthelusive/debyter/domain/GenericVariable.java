@@ -1,3 +1,3 @@
 package smthelusive.debyter.domain;
 
-public interface GenericVariable {}
+public record GenericVariable(int type, long value) {}

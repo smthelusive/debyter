@@ -10,4 +10,5 @@ public class CommandSet {
     public static final int EVENT_REQUEST_COMMAND_SET = 15;
     public static final int STACK_FRAME_COMMAND_SET = 16;
     public static final int THREAD_REFERENCE_COMMAND_SET = 11;
+    public static final int STRING_REFERENCE_COMMAND_SET = 10;
 }

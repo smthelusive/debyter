@@ -101,6 +101,7 @@ public class ResponseProcessor extends Thread {
                 case RESPONSE_TYPE_FRAME_INFO -> responsePacket = parseResponseFrame(result);
                 case RESPONSE_TYPE_LOCAL_VARIABLES -> responsePacket = parseResponseVariables(result);
                 case RESPONSE_TYPE_BYTECODES -> responsePacket = parseResponseBytecodes(result);
+                case RESPONSE_TYPE_STRING_VALUE -> responsePacket = parseResponseStringValue(result);
                 default -> {}
             }
         }
@@ -131,30 +132,40 @@ public class ResponseProcessor extends Thread {
         for (int i = 0; i < amountOfValues; i++) {
             byte type = result[lastPos];
             lastPos++;
-            switch (type) {
-                case Type.INT -> {
-                    int value = getIntFromData(result);
-                    GenericVariable intValue = new IntVariable(value);
-                    responsePacket.addVariableValue(intValue);
-                }
-                case Type.ARRAY -> {
-                    long arrayRef = getLongFromData(result);
-                    // todo
-                    logger.info("array, slot " + i + " is: " + arrayRef);
-                }
-                case Type.STRING -> {
-                    long stringReference = getLongFromData(result);
-                    // todo
-                    logger.info("string reference, slot " + i + " is: " + stringReference);
-                }
-                case Type.OBJECT -> {
-                    long objectReference = getLongFromData(result);
-                    // todo
-                    logger.info("object reference, slot " + i + " is: " + objectReference);
-                }
-                default -> logger.error("something unexpected received");
-            }
+            long value = type == Type.INT ? getIntFromData(result) : getLongFromData(result);
+            GenericVariable genericVariable = new GenericVariable(type, value);
+            responsePacket.addVariable(genericVariable);
+//            switch (type) {
+//                case Type.INT -> {
+//                    long value = getIntFromData(result);
+//                    GenericVariable intValue = new IntVariable(value);
+//                    responsePacket.addVariableValue(intValue);
+//                }
+//                case Type.ARRAY | Type.STRING | Type.OBJECT -> {
+//                    long longRef = getLongFromData(result);
+//                    // todo
+//                    logger.info("array, slot " + i + " is: " + arrayRef);
+//                }
+//                case Type.STRING -> {
+//                    long stringReference = getLongFromData(result);
+//                    // todo
+//                    logger.info("string reference, slot " + i + " is: " + stringReference);
+//                }
+//                case Type.OBJECT -> {
+//                    long objectReference = getLongFromData(result);
+//                    // todo
+//                    logger.info("object reference, slot " + i + " is: " + objectReference);
+//                }
+//                default -> logger.error("something unexpected received");
+//            }
         }
+        return responsePacket;
+    }
+
+    private ResponsePacket parseResponseStringValue(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        String value = getStringFromData(result);
+        responsePacket.setStringValue(value);
         return responsePacket;
     }
 

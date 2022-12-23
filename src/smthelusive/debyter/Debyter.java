@@ -105,10 +105,11 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case RESPONSE_TYPE_BYTECODES -> bytecodes = responsePacket.getBytecodes();
                 case RESPONSE_TYPE_VARIABLETABLE -> variableTable = responsePacket.getVariableTable();
                 case RESPONSE_TYPE_LINETABLE -> lineTable = responsePacket.getLineTable();
-                case RESPONSE_TYPE_LOCAL_VARIABLES -> variablesReceived(responsePacket.getVariableValues());
+                case RESPONSE_TYPE_LOCAL_VARIABLES -> variablesReceived(responsePacket.getGenericVariables());
                 case RESPONSE_TYPE_CLASS_INFO -> {}
                 case RESPONSE_TYPE_EVENT_REQUEST -> logger.info("event request registered");
                 case RESPONSE_TYPE_METHODS -> methodsInfoObtained(responsePacket.getMethods());
+                case RESPONSE_TYPE_STRING_VALUE -> logger.info("String value: " + responsePacket.getStringValue());
             }
         });
     }
@@ -148,19 +149,8 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    private static void classInfo(String signature) throws Exception {
-        requestClassDataBySignature(
-        getNewUniqueId(),
-        EMPTY_FLAGS,
-        VIRTUAL_MACHINE_COMMAND_SET,
-        CLASSES_BY_SIGNATURE_CMD,
-        signature,
-        RESPONSE_TYPE_CLASS_INFO);
-    }
-
     private static void idSizes() throws Exception {
         sendEmptyPacket(getNewUniqueId(),
-                EMPTY_FLAGS,
                 VIRTUAL_MACHINE_COMMAND_SET,
                 ID_SIZES_CMD,
                 RESPONSE_TYPE_ID_SIZES);
@@ -168,7 +158,6 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void allClasses() throws Exception {
         sendEmptyPacket(getNewUniqueId(),
-        EMPTY_FLAGS,
         VIRTUAL_MACHINE_COMMAND_SET,
         ALL_CLASSES_CMD,
         RESPONSE_TYPE_ALL_CLASSES);
@@ -176,15 +165,13 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void capabilitiesNew() throws Exception {
         sendEmptyPacket(getNewUniqueId(),
-        EMPTY_FLAGS,
         VIRTUAL_MACHINE_COMMAND_SET,
         CAPABILITIES_NEW_CMD,
         RESPONSE_TYPE_NONE);
     }
 
-    private static void sendEmptyPacket(int id, int flags, int commandSet,
-                                       int command, int responseType) throws Exception {
-        sendHeader(EMPTY_PACKET_SIZE, id, flags, commandSet, command, responseType);
+    private static void sendEmptyPacket(int id, int commandSet, int command, int responseType) throws Exception {
+        sendHeader(EMPTY_PACKET_SIZE, id, EMPTY_FLAGS, commandSet, command, responseType);
         out.flush();
     }
 
@@ -198,11 +185,21 @@ public class Debyter implements ResponseListener, UserInputListener {
         out.write(getByteOfInt(command));
     }
 
-    private static void requestClassDataBySignature(int id, int flags, int commandSet,
-                                                   int command, String signature, int responseType) throws Exception {
-        byte[] signatureBytes = signature.getBytes();
+    private static void requestStringValue(long stringId) {
+        try {
+            Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, STRING_REFERENCE_COMMAND_SET, STRING_VALUE_CMD);
+            packet.addDataAsLong(stringId);
+            out.write(packet.getPacketBytes());
+            out.flush();
+        } catch (IOException e) {
+            logger.error(e.getMessage());
+        }
+    }
+
+    private static void requestClassDataBySignature(String signature) throws Exception {
+        byte[] signatureBytes = signature.getBytes(); // todo check doesn't int size of string have to be included in the total size?
         sendHeader(EMPTY_PACKET_SIZE + signatureBytes.length + INTEGER_LENGTH_BYTES,
-                id, flags, commandSet, command, responseType);
+                getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, CLASSES_BY_SIGNATURE_CMD, RESPONSE_TYPE_CLASS_INFO);
         out.write(Utils.getBytesOfInt(signatureBytes.length));
         out.write(signatureBytes);
         out.flush();
@@ -402,21 +399,15 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void requestResume() {
         try {
-            sendEmptyPacket(getNewUniqueId(), EMPTY_FLAGS,
-                    VIRTUAL_MACHINE_COMMAND_SET, RESUME_CMD, RESPONSE_TYPE_NONE);
+            sendEmptyPacket(getNewUniqueId(), VIRTUAL_MACHINE_COMMAND_SET, RESUME_CMD, RESPONSE_TYPE_NONE);
         } catch (Exception e) {
             logger.error("something went wrong during resuming the JVM");
         }
     }
 
-    private static void requestClearStepEvents() {
-        // todo
-    }
-
     private static void userRequestClearBreakpoints() {
         try {
             sendEmptyPacket(getNewUniqueId(),
-                    EMPTY_FLAGS,
                     EVENT_REQUEST_COMMAND_SET,
                     CLEAR_ALL_BREAKPOINTS_CMD,
                     RESPONSE_TYPE_NONE);
@@ -464,6 +455,20 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static void variablesReceived(List<GenericVariable> variables) {
         logger.info("LOCAL VARIABLES:");
         for (GenericVariable variable: variables) {
+            switch (variable.type()) {
+                case Type.INT -> logger.info("received int, value: " + variable.value());
+                case Type.ARRAY -> {
+                    logger.info("received array, reference: " + variable.value());
+                }
+                case Type.STRING -> {
+                    requestStringValue(variable.value());
+                    logger.info("received array, reference: " + variable.value());
+                }
+                case Type.OBJECT -> {
+                    logger.info("received object, reference: " + variable.value());
+                }
+                default -> logger.error("something unexpected received");
+            }
             logger.info(variable.toString());
         }
     }

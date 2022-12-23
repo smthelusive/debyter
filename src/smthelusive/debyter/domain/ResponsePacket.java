@@ -1,6 +1,7 @@
 package smthelusive.debyter.domain;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class ResponsePacket {
@@ -20,7 +21,7 @@ public class ResponsePacket {
     private LineTable lineTable;
 
     private VariableTable variableTable;
-    private List<GenericVariable> variableValues = new ArrayList<>();
+    private List<GenericVariable> genericVariables = new ArrayList<>();
 
     private int fieldIDSize;
     private int methodIDSize;
@@ -33,12 +34,22 @@ public class ResponsePacket {
 
     private Location location;
 
-    public List<GenericVariable> getVariableValues() {
-        return variableValues;
+    private String stringValue;
+
+    public String getStringValue() {
+        return stringValue;
     }
 
-    public void addVariableValue(GenericVariable variableValue) {
-        variableValues.add(variableValue);
+    public void setStringValue(String stringValue) {
+        this.stringValue = stringValue;
+    }
+
+    public List<GenericVariable> getGenericVariables() {
+        return genericVariables;
+    }
+
+    public void addVariable(GenericVariable genericVariable) {
+        genericVariables.add(genericVariable);
     }
 
     public byte[] getBytecodes() {
@@ -216,16 +227,21 @@ public class ResponsePacket {
                 ", events=" + events +
                 ", eventsList=" + eventsList +
                 ", responseType=" + responseType +
-                ", concreteResponseType=" + eventType +
+                ", eventType=" + eventType +
                 ", classes=" + classes +
                 ", methods=" + methods +
                 ", lineTable=" + lineTable +
                 ", variableTable=" + variableTable +
+                ", variableValues=" + genericVariables +
                 ", fieldIDSize=" + fieldIDSize +
                 ", methodIDSize=" + methodIDSize +
                 ", objectIDSize=" + objectIDSize +
                 ", referenceTypeIDSize=" + referenceTypeIDSize +
                 ", frameIDSize=" + frameIDSize +
+                ", frameId=" + frameId +
+                ", bytecodes=" + Arrays.toString(bytecodes) +
+                ", location=" + location +
+                ", stringValue='" + stringValue + '\'' +
                 '}';
     }
 }
