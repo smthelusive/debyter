@@ -44,6 +44,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static int id = 0;
     private static boolean userCanInteract = false;
     private static boolean stepping = false;
+    private static boolean stepEventsIncoming = false;
 
     private static int getNewUniqueId() {
         return id++;
@@ -84,7 +85,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                 }
                 case STEP_OVER -> {
                     if (!stepping) {
-                        requestStepOverEvent();
+                        ensureReceivingStepOverEvents();
                         stepping = true;
                     }
                 }
@@ -299,24 +300,25 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    private static void requestStepOverEvent() {
-        try {
-            int id = getNewUniqueId();
-            responseProcessor.requestIsSent(id, RESPONSE_TYPE_SINGLE_STEP);
-            Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
-            packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
-            packet.addDataAsByte(SuspendPolicy.ALL);
-            packet.addDataAsInt(1); // modifiers
-//            packet.addDataAsByte(ModKind.COUNT);
-//            packet.addDataAsInt(1);
-            packet.addDataAsByte(ModKind.STEP);
-            packet.addDataAsLong(threadId);
-            packet.addDataAsInt(Step.STEP_MIN);
-            packet.addDataAsInt(Step.STEP_OVER);
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (Exception e) {
-            logger.error("something went wrong during requesting step over");
+    private static void ensureReceivingStepOverEvents() {
+        if (!stepEventsIncoming) {
+            try {
+                int id = getNewUniqueId();
+                responseProcessor.requestIsSent(id, RESPONSE_TYPE_SINGLE_STEP);
+                Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
+                packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
+                packet.addDataAsByte(SuspendPolicy.ALL);
+                packet.addDataAsInt(1); // modifiers
+                packet.addDataAsByte(ModKind.STEP);
+                packet.addDataAsLong(threadId);
+                packet.addDataAsInt(Step.STEP_MIN);
+                packet.addDataAsInt(Step.STEP_OVER);
+                out.write(packet.getPacketBytes());
+                out.flush();
+                stepEventsIncoming = true;
+            } catch (Exception e) {
+                logger.error("something went wrong during requesting step over");
+            }
         }
     }
 
