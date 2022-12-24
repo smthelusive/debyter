@@ -43,8 +43,6 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static final Logger logger = LoggerFactory.getLogger(Debyter.class);
     private static int id = 0;
     private static boolean userCanInteract = false;
-    private static boolean stepping = false;
-    private static boolean stepEventsIncoming = false;
 
     private static int getNewUniqueId() {
         return id++;
@@ -83,12 +81,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                                 Integer.parseInt(userCommand.params()[1]));
                     }
                 }
-                case STEP_OVER -> {
-                    if (!stepping) {
-                        ensureReceivingStepOverEvents();
-                        stepping = true;
-                    }
-                }
+                case STEP_OVER -> requestStepOverEvents();
                 case CLEAR -> userRequestClearBreakpoints();
                 case RESUME -> requestResume();
                 case EXIT -> requestVMDeathEvent();
@@ -108,9 +101,11 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case RESPONSE_TYPE_LINETABLE -> lineTable = responsePacket.getLineTable();
                 case RESPONSE_TYPE_LOCAL_VARIABLES -> variablesReceived(responsePacket.getGenericVariables());
                 case RESPONSE_TYPE_CLASS_INFO -> {}
-                case RESPONSE_TYPE_EVENT_REQUEST -> logger.info("event request registered");
+                case RESPONSE_TYPE_EVENT_REQUEST -> {
+                    logger.info("event request registered");
+                }
                 case RESPONSE_TYPE_METHODS -> methodsInfoObtained(responsePacket.getMethods());
-                case RESPONSE_TYPE_STRING_VALUE -> logger.info("String value: " + responsePacket.getStringValue());
+                case RESPONSE_TYPE_STRING_VALUE -> logger.info("String, value: " + responsePacket.getStringValue());
             }
         });
     }
@@ -123,16 +118,32 @@ public class Debyter implements ResponseListener, UserInputListener {
                 breakPointHit(event.getThread(), location);
             }
             case STEP_HIT -> {
-                if (stepping) {
-                    location = event.getLocation();
-                    breakPointHit(event.getThread(), location);
-                    stepping = false;
+                if (responseProcessor.isStepOverRequestActive()) {
+                    int requestId = responseProcessor.getStepOverRequestId();
+                    responseProcessor.resetStepOverRequestId();
+                    requestClearEvent(EVENT_KIND_SINGLE_STEP, requestId);
                 }
+                location = event.getLocation();
+                breakPointHit(event.getThread(), location);
             }
             case CLASS_LOADED -> {
                 threadId = event.getThread();
                 classIsLoaded(event.getRefTypeId());
             }
+        }
+    }
+
+    private static void requestClearEvent(byte eventKind, int requestId) {
+        try {
+            int id = getNewUniqueId();
+            responseProcessor.requestIsSent(id, RESPONSE_TYPE_NONE);
+            Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, CLEAR_CMD);
+            packet.addDataAsByte(eventKind);
+            packet.addDataAsInt(requestId);
+            out.write(packet.getPacketBytes());
+            out.flush();
+        } catch (Exception e) {
+            logger.error("something went wrong during requesting clear event");
         }
     }
 
@@ -188,8 +199,10 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void requestStringValue(long stringId) {
         try {
-            Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, STRING_REFERENCE_COMMAND_SET, STRING_VALUE_CMD);
+            int id = getNewUniqueId();
+            Packet packet = new Packet(id, EMPTY_FLAGS, STRING_REFERENCE_COMMAND_SET, STRING_VALUE_CMD);
             packet.addDataAsLong(stringId);
+            responseProcessor.requestIsSent(id, RESPONSE_TYPE_STRING_VALUE);
             out.write(packet.getPacketBytes());
             out.flush();
         } catch (IOException e) {
@@ -213,8 +226,6 @@ public class Debyter implements ResponseListener, UserInputListener {
         packet.addDataAsByte(EVENT_KIND_CLASS_PREPARE);
         packet.addDataAsByte(SuspendPolicy.ALL);
         packet.addDataAsInt(1); // modifiers
-//        packet.addDataAsByte(ModKind.COUNT);
-//        packet.addDataAsInt(1);
         packet.addDataAsByte(ModKind.CLASS_MATCH);
         byte[] classNameBytes = className.getBytes();
         packet.addDataAsBytes(Utils.getBytesOfInt(classNameBytes.length));
@@ -300,25 +311,22 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    private static void ensureReceivingStepOverEvents() {
-        if (!stepEventsIncoming) {
-            try {
-                int id = getNewUniqueId();
-                responseProcessor.requestIsSent(id, RESPONSE_TYPE_SINGLE_STEP);
-                Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
-                packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
-                packet.addDataAsByte(SuspendPolicy.ALL);
-                packet.addDataAsInt(1); // modifiers
-                packet.addDataAsByte(ModKind.STEP);
-                packet.addDataAsLong(threadId);
-                packet.addDataAsInt(Step.STEP_MIN);
-                packet.addDataAsInt(Step.STEP_OVER);
-                out.write(packet.getPacketBytes());
-                out.flush();
-                stepEventsIncoming = true;
-            } catch (Exception e) {
-                logger.error("something went wrong during requesting step over");
-            }
+    private static void requestStepOverEvents() {
+        try {
+            int id = getNewUniqueId();
+            responseProcessor.requestIsSent(id, RESPONSE_TYPE_SINGLE_STEP);
+            Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
+            packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
+            packet.addDataAsByte(SuspendPolicy.ALL);
+            packet.addDataAsInt(1); // modifiers
+            packet.addDataAsByte(ModKind.STEP);
+            packet.addDataAsLong(threadId);
+            packet.addDataAsInt(Step.STEP_MIN);
+            packet.addDataAsInt(Step.STEP_OVER);
+            out.write(packet.getPacketBytes());
+            out.flush();
+        } catch (Exception e) {
+            logger.error("something went wrong during requesting step over");
         }
     }
 
@@ -441,9 +449,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void breakPointHit(long threadId, Location location) {
-        logger.info("BREAKPOINT HIT. current bytecode operation: " +
-                BYTECODE_OPERATIONS.get(bytecodes[(int)location.codeIndex()])
-                + ", line #" + location.codeIndex());
+        logger.info("BREAKPOINT HIT line #" + location.codeIndex());
         requestCurrentFrameInfo(threadId);
     }
 
@@ -458,20 +464,12 @@ public class Debyter implements ResponseListener, UserInputListener {
         logger.info("LOCAL VARIABLES:");
         for (GenericVariable variable: variables) {
             switch (variable.type()) {
-                case Type.INT -> logger.info("received int, value: " + variable.value());
-                case Type.ARRAY -> {
-                    logger.info("received array, reference: " + variable.value());
-                }
-                case Type.STRING -> {
-                    requestStringValue(variable.value());
-                    logger.info("received array, reference: " + variable.value());
-                }
-                case Type.OBJECT -> {
-                    logger.info("received object, reference: " + variable.value());
-                }
+                case Type.INT -> logger.info("int, value: " + variable.value());
+                case Type.ARRAY -> logger.info("array, reference: " + variable.value());
+                case Type.STRING -> requestStringValue(variable.value());
+                case Type.OBJECT -> logger.info("object, reference: " + variable.value());
                 default -> logger.error("something unexpected received");
             }
-            logger.info(variable.toString());
         }
     }
 

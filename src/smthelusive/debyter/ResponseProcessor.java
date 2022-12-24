@@ -27,10 +27,25 @@ public class ResponseProcessor extends Thread {
     private int lastPos;
     private long classId;
     private long threadId;
+
+    private int stepOverRequest = -1;
+
     private final ResponseListener responseListener;
 
     public void requestIsSent(int id, int expectedResponseType) {
         requestsSent.put(id, expectedResponseType);
+    }
+
+    public boolean isStepOverRequestActive() {
+        return stepOverRequest != -1;
+    }
+
+    public int getStepOverRequestId() {
+        return stepOverRequest;
+    }
+
+    public void resetStepOverRequestId() {
+        stepOverRequest = -1;
     }
 
     public void finishProcessing() {
@@ -158,7 +173,6 @@ public class ResponseProcessor extends Thread {
         long methodId = getLongFromData(result);
         long codeIndex = getLongFromData(result);
         Location location = new Location(tag, classId, methodId, codeIndex);
-        logger.info("frame location: " + location + " id: " + frameId);
         responsePacket.setFrameId(frameId);
         responsePacket.setLocation(location);
         return responsePacket;
@@ -313,6 +327,8 @@ public class ResponseProcessor extends Thread {
         event.setInternalEventType(eventKind == EVENT_KIND_BREAKPOINT ?
                 EventType.BREAKPOINT_HIT : EventType.STEP_HIT);
         int requestId = getIntFromData(result);
+        if (eventKind == EVENT_KIND_SINGLE_STEP)
+            stepOverRequest = requestId;
         event.setRequestID(requestId);
         long threadId = getLongFromData(result);
         event.setThread(threadId);
