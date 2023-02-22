@@ -57,9 +57,11 @@ public class Debyter implements ResponseListener, UserInputListener {
         startConnection(LOCALHOST, PORT);
         jdwpHandshake();
         Debyter debyter = new Debyter();
-        userInputProcessor = new UserInputProcessor(debyter);
+        userInputProcessor = new UserInputProcessor();
+        userInputProcessor.addListener(debyter);
         userInputProcessor.start();
-        responseProcessor = new ResponseProcessor(in, debyter);
+        responseProcessor = new ResponseProcessor(in);
+        responseProcessor.addListener(debyter);
         responseProcessor.start();
         requestClassPrepareEvent(args[0]);
         while (keepProcessing) {
@@ -84,7 +86,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case STEP_OVER -> requestStepOverEvents();
                 case CLEAR -> userRequestClearBreakpoints();
                 case RESUME -> requestResume();
-                case EXIT -> requestVMDeathEvent();
+                case EXIT -> requestExit();
             }
         }
     }
@@ -101,9 +103,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case RESPONSE_TYPE_LINETABLE -> lineTable = responsePacket.getLineTable();
                 case RESPONSE_TYPE_LOCAL_VARIABLES -> variablesReceived(responsePacket.getGenericVariables());
                 case RESPONSE_TYPE_CLASS_INFO -> {}
-                case RESPONSE_TYPE_EVENT_REQUEST -> {
-                    logger.info("event request registered");
-                }
+                case RESPONSE_TYPE_EVENT_REQUEST -> logger.info("event request registered");
                 case RESPONSE_TYPE_METHODS -> methodsInfoObtained(responsePacket.getMethods());
                 case RESPONSE_TYPE_STRING_VALUE -> logger.info("String, value: " + responsePacket.getStringValue());
             }
@@ -112,6 +112,7 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void processEvent(Event event) {
         switch (event.getInternalEventType()) {
+            case VM_START -> logger.info("VM started");
             case VM_DEATH -> vmDeathEventReceived();
             case BREAKPOINT_HIT -> {
                 location = event.getLocation();
@@ -249,8 +250,8 @@ public class Debyter implements ResponseListener, UserInputListener {
         try {
             out.write(JDWP_HANDSHAKE.getBytes(StandardCharsets.US_ASCII));
             byte[] result = in.readNBytes(HANDSHAKE_SIZE);
-            logger.info(new String(result, StandardCharsets.US_ASCII));
-            in.readNBytes(29); // it's probably VM started event, todo accept/parse later
+            String response = new String(result, StandardCharsets.US_ASCII);
+            logger.info(response);
         } catch (Exception e) {
             logger.error(e.getMessage());
         }
@@ -293,21 +294,6 @@ public class Debyter implements ResponseListener, UserInputListener {
             out.flush();
         } catch (Exception e) {
             logger.error("something went wrong during setting the breakpoint");
-        }
-    }
-
-    private static void requestVMDeathEvent() {
-        try {
-            int id = getNewUniqueId();
-            responseProcessor.requestIsSent(id, RESPONSE_TYPE_COMPOSITE_EVENT);
-            Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
-            packet.addDataAsByte(EVENT_KIND_VM_DEATH);
-            packet.addDataAsByte(SuspendPolicy.NONE);
-            packet.addDataAsInt(0);
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (Exception e) {
-            logger.error("something went wrong during requesting vm death event");
         }
     }
 
@@ -412,6 +398,19 @@ public class Debyter implements ResponseListener, UserInputListener {
             sendEmptyPacket(getNewUniqueId(), VIRTUAL_MACHINE_COMMAND_SET, RESUME_CMD, RESPONSE_TYPE_NONE);
         } catch (Exception e) {
             logger.error("something went wrong during resuming the JVM");
+        }
+    }
+
+    private static void requestExit() {
+        try {
+            int exitCode = 0; // ok
+            Packet packet = new Packet(id, EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, EXIT_CMD);
+            packet.addDataAsInt(exitCode);
+            out.write(packet.getPacketBytes());
+            out.flush();
+            System.exit(exitCode);
+        } catch (Exception e) {
+            logger.error("something went wrong during exiting");
         }
     }
 

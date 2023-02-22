@@ -46,12 +46,3 @@ public static void main(java.lang.String[]);
         }
 
 */
-
-// todo check bytecodes amount for the method with 6-3. if it's 38 or 39 then use it to know when to stop
-// todo: parse strings and arrays properly
-// todo stop when the last line is met (maybe when the method exit event happens)
-// todo test it with WIP file
-// todo do a nice logging
-// todo make sure that we don't get index out of bounds exception when mapping bytecode to location
-// todo parse vm start event
-// todo exit doesn't work

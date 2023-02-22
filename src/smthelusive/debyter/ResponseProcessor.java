@@ -16,8 +16,7 @@ import static smthelusive.debyter.constants.CommandSet.EVENT_COMMAND_SET;
 import static smthelusive.debyter.constants.EventKind.*;
 import static smthelusive.debyter.constants.Constants.*;
 import static smthelusive.debyter.constants.ResponseType.*;
-import static smthelusive.debyter.domain.EventType.CLASS_LOADED;
-import static smthelusive.debyter.domain.EventType.VM_DEATH;
+import static smthelusive.debyter.domain.EventType.*;
 
 public class ResponseProcessor extends Thread {
     private final InputStream inputStream;
@@ -30,7 +29,7 @@ public class ResponseProcessor extends Thread {
 
     private int stepOverRequest = -1;
 
-    private final ResponseListener responseListener;
+    private final ArrayList<ResponseListener> responseListeners = new ArrayList<>();
 
     public void requestIsSent(int id, int expectedResponseType) {
         requestsSent.put(id, expectedResponseType);
@@ -51,11 +50,12 @@ public class ResponseProcessor extends Thread {
     public void finishProcessing() {
         this.processingOn = false;
     }
-    public ResponseProcessor(InputStream in, ResponseListener responseListener) {
+    public ResponseProcessor(InputStream in) {
         this.inputStream = in;
-        this.responseListener = responseListener;
     }
-
+    public void addListener(ResponseListener listener) {
+        responseListeners.add(listener);
+    }
     /***
      * parse input stream non-stop
      * notify listeners when something is received
@@ -71,7 +71,8 @@ public class ResponseProcessor extends Thread {
                 if (leftoverLengthToRead > 0) {
                     byte[] result = inputStream.readNBytes(leftoverLengthToRead);
                     ResponsePacket responsePacket = parseResponseIntoPacket(result);
-                    responseListener.incomingPacket(responsePacket);
+                    responseListeners.forEach(responseListener ->
+                            responseListener.incomingPacket(responsePacket));
                     requestsSent.remove(responsePacket.getId());
                 }
             } catch (IOException ioException) {
@@ -282,6 +283,7 @@ public class ResponseProcessor extends Thread {
             byte eventKind = result[lastPos];
             lastPos++;
             switch (eventKind) {
+                case EVENT_KIND_VM_START -> responsePacket.addEvent(constructVMStartEvent(result));
                 case EVENT_KIND_VM_DEATH -> responsePacket.addEvent(constructVMDeathEvent(result));
                 case EVENT_KIND_CLASS_PREPARE -> responsePacket.addEvent(parseClassPrepareEvent(result));
                 case EVENT_KIND_BREAKPOINT ->
@@ -299,6 +301,14 @@ public class ResponseProcessor extends Thread {
         vmDeathEvent.setInternalEventType(VM_DEATH);
         vmDeathEvent.setRequestID(getIntFromData(result));
         return vmDeathEvent;
+    }
+    private Event constructVMStartEvent(byte[] result) {
+        Event vmStartEvent = new Event();
+        vmStartEvent.setEventKind(EVENT_KIND_VM_START);
+        vmStartEvent.setInternalEventType(VM_START);
+        vmStartEvent.setRequestID(getIntFromData(result));
+        vmStartEvent.setThread(getLongFromData(result));
+        return vmStartEvent;
     }
 
     private Event parseClassPrepareEvent(byte[] result) {
