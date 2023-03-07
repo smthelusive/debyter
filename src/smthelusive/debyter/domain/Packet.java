@@ -8,6 +8,7 @@ import static smthelusive.debyter.constants.Constants.INTEGER_LENGTH_BYTES;
 
 public class Packet {
     private final LinkedList<Byte> bytes = new LinkedList<>();
+    private int id;
 
     public Packet(int id, int flags, int commandSet, int command) {
         setLength(EMPTY_PACKET_SIZE);
@@ -24,7 +25,12 @@ public class Packet {
         }
     }
 
+    public int getId() {
+        return id;
+    }
+
     private void setID(int id) {
+        this.id = id;
         byte[] idBytes = getBytesOfInt(id);
         for (int i = 4; i < 8; i++) {
             bytes.add(i, idBytes[i - 4]);

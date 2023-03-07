@@ -58,6 +58,7 @@ public class Debyter implements ResponseListener, UserInputListener {
         responseProcessor.addListener(debyter);
         responseProcessor.start();
         requestClassPrepareEvent(args[0]);
+        requestResume();
         while (keepProcessing) {
             processAllResponsePackets();
             if (userCanInteract) processAUserCommand();
@@ -133,63 +134,32 @@ public class Debyter implements ResponseListener, UserInputListener {
                 currentState.setThreadId(event.getThread());
                 currentState.setClassId(event.getRefTypeId());
                 requestMethodsOfClassInfo(event.getRefTypeId());
-//                classIsLoaded(event.getRefTypeId());
             }
         }
     }
 
     private static void requestClearEvent(byte eventKind, int requestId) {
-        try {
-            int id = getNewUniqueId();
-            responseProcessor.requestIsSent(id, RESPONSE_TYPE_NONE);
-            Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, CLEAR_CMD);
-            packet.addDataAsByte(eventKind);
-            packet.addDataAsInt(requestId);
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (Exception e) {
-            logger.error("something went wrong during requesting clear event");
-        }
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, CLEAR_CMD);
+        packet.addDataAsByte(eventKind);
+        packet.addDataAsInt(requestId);
+        sendPacket(packet, RESPONSE_TYPE_NONE);
     }
 
     private static void requestByteCodes(long classId, long methodId) {
-        try {
-            int id = getNewUniqueId();
-            responseProcessor.requestIsSent(id, RESPONSE_TYPE_BYTECODES);
-            Packet packet = new Packet(id, EMPTY_FLAGS, METHOD_COMMAND_SET, BYTECODES_CMD);
-            packet.addDataAsLong(classId);
-            packet.addDataAsLong(methodId);
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (Exception e) {
-            logger.error("something went wrong during requesting the bytecodes");
-        }
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, METHOD_COMMAND_SET, BYTECODES_CMD);
+        packet.addDataAsLong(classId);
+        packet.addDataAsLong(methodId);
+        sendPacket(packet, RESPONSE_TYPE_BYTECODES);
     }
 
-//    private static void idSizes() throws Exception {
-//        sendEmptyPacket(getNewUniqueId(),
-//                VIRTUAL_MACHINE_COMMAND_SET,
-//                ID_SIZES_CMD,
-//                RESPONSE_TYPE_ID_SIZES);
-//    }
-
-    private static void allClasses() throws Exception {
-        sendEmptyPacket(getNewUniqueId(),
-        VIRTUAL_MACHINE_COMMAND_SET,
-        ALL_CLASSES_CMD,
-        RESPONSE_TYPE_ALL_CLASSES);
-    }
-
-//    private static void capabilitiesNew() throws Exception {
-//        sendEmptyPacket(getNewUniqueId(),
-//        VIRTUAL_MACHINE_COMMAND_SET,
-//        CAPABILITIES_NEW_CMD,
-//        RESPONSE_TYPE_NONE);
-//    }
-
-    private static void sendEmptyPacket(int id, int commandSet, int command, int responseType) throws Exception {
-        sendHeader(EMPTY_PACKET_SIZE, id, EMPTY_FLAGS, commandSet, command, responseType);
-        out.flush();
+    private static void requestAllClasses() {
+        sendPacket(
+                new Packet(
+                        getNewUniqueId(),
+                        EMPTY_FLAGS,
+                        VIRTUAL_MACHINE_COMMAND_SET,
+                        ALL_CLASSES_CMD
+                ), RESPONSE_TYPE_ALL_CLASSES);
     }
 
     private static void sendHeader(int length, int id, int flags, int commandSet,
@@ -203,11 +173,15 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void requestStringValue(long stringId) {
+        int id = getNewUniqueId();
+        Packet packet = new Packet(id, EMPTY_FLAGS, STRING_REFERENCE_COMMAND_SET, STRING_VALUE_CMD);
+        packet.addDataAsLong(stringId);
+        sendPacket(packet, RESPONSE_TYPE_STRING_VALUE);
+    }
+
+    private static void sendPacket(Packet packet, int responseType) {
+        if (responseType != RESPONSE_TYPE_NONE) responseProcessor.requestIsSent(packet.getId(), responseType);
         try {
-            int id = getNewUniqueId();
-            Packet packet = new Packet(id, EMPTY_FLAGS, STRING_REFERENCE_COMMAND_SET, STRING_VALUE_CMD);
-            packet.addDataAsLong(stringId);
-            responseProcessor.requestIsSent(id, RESPONSE_TYPE_STRING_VALUE);
             out.write(packet.getPacketBytes());
             out.flush();
         } catch (IOException e) {
@@ -215,29 +189,25 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    private static void requestClassDataBySignature(String signature) throws Exception {
-        byte[] signatureBytes = signature.getBytes(); // todo check doesn't int size of string have to be included in the total size?
-        sendHeader(EMPTY_PACKET_SIZE + signatureBytes.length + INTEGER_LENGTH_BYTES,
-                getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, CLASSES_BY_SIGNATURE_CMD, RESPONSE_TYPE_CLASS_INFO);
-        out.write(Utils.getBytesOfInt(signatureBytes.length));
-        out.write(signatureBytes);
-        out.flush();
+    // todo test this
+    private static void requestClassDataBySignature(String signature) {
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, CLASSES_BY_SIGNATURE_CMD);
+        packet.addDataAsInt(signature.getBytes().length);
+        packet.addDataAsBytes(signature.getBytes());
+        sendPacket(packet, RESPONSE_TYPE_CLASS_INFO);
     }
 
     private static void requestClassPrepareEvent(String className) throws Exception {
-        int id = getNewUniqueId();
-        responseProcessor.requestIsSent(id, RESPONSE_TYPE_COMPOSITE_EVENT);
-        Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
         packet.addDataAsByte(EVENT_KIND_CLASS_PREPARE);
         packet.addDataAsByte(SuspendPolicy.ALL);
         packet.addDataAsInt(1); // modifiers
         packet.addDataAsByte(ModKind.CLASS_MATCH);
         byte[] classNameBytes = className.getBytes();
-        packet.addDataAsBytes(Utils.getBytesOfInt(classNameBytes.length));
+        packet.addDataAsBytes(Utils.getBytesOfInt(classNameBytes.length)); // todo addDataAsInt?
         packet.addDataAsBytes(classNameBytes);
-        out.write(packet.getPacketBytes());
-        out.flush();
-        requestResume();
+        sendPacket(packet, RESPONSE_TYPE_COMPOSITE_EVENT);
+
     }
 
     private static void startConnection(String ip, int port) {
@@ -281,89 +251,52 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void requestBreakpointEvent(long classId, long methodId, long codeIndex) {
-        try {
-            int id = getNewUniqueId();
-            responseProcessor.requestIsSent(id, RESPONSE_TYPE_COMPOSITE_EVENT);
-            Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
-            packet.addDataAsByte(EVENT_KIND_BREAKPOINT);
-            packet.addDataAsByte(SuspendPolicy.ALL);
-            packet.addDataAsInt(1); // modifiers
-            packet.addDataAsByte(ModKind.LOCATION_ONLY);
-            packet.addDataAsByte(TypeTag.CLASS);
-            packet.addDataAsLong(classId);
-            packet.addDataAsLong(methodId);
-            packet.addDataAsLong(codeIndex);
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (Exception e) {
-            logger.error("something went wrong during setting the breakpoint");
-        }
+        Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
+        packet.addDataAsByte(EVENT_KIND_BREAKPOINT);
+        packet.addDataAsByte(SuspendPolicy.ALL);
+        packet.addDataAsInt(1); // modifiers
+        packet.addDataAsByte(ModKind.LOCATION_ONLY);
+        packet.addDataAsByte(TypeTag.CLASS);
+        packet.addDataAsLong(classId);
+        packet.addDataAsLong(methodId);
+        packet.addDataAsLong(codeIndex);
+        sendPacket(packet, RESPONSE_TYPE_COMPOSITE_EVENT);
     }
 
     private static void requestStepOverEvents() {
-        try {
-            int id = getNewUniqueId();
-            responseProcessor.requestIsSent(id, RESPONSE_TYPE_SINGLE_STEP);
-            Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
-            packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
-            packet.addDataAsByte(SuspendPolicy.ALL);
-            packet.addDataAsInt(1); // modifiers
-            packet.addDataAsByte(ModKind.STEP);
-            packet.addDataAsLong(currentState.getThreadId());
-            packet.addDataAsInt(Step.STEP_MIN);
-            packet.addDataAsInt(Step.STEP_OVER);
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (Exception e) {
-            logger.error("something went wrong during requesting step over");
-        }
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
+        packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
+        packet.addDataAsByte(SuspendPolicy.ALL);
+        packet.addDataAsInt(1); // modifiers
+        packet.addDataAsByte(ModKind.STEP);
+        packet.addDataAsLong(currentState.getThreadId());
+        packet.addDataAsInt(Step.STEP_MIN);
+        packet.addDataAsInt(Step.STEP_OVER);
+        sendPacket(packet, RESPONSE_TYPE_SINGLE_STEP);
     }
 
     private static void requestMethodsOfClassInfo(long typeID) {
-        int id = getNewUniqueId();
-        responseProcessor.requestIsSent(id, RESPONSE_TYPE_METHODS);
-        Packet packet = new Packet(id, EMPTY_FLAGS, REFERENCE_TYPE_COMMAND_SET, METHODS_CMD);
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, REFERENCE_TYPE_COMMAND_SET, METHODS_CMD);
         packet.addDataAsLong(typeID);
-        try {
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (IOException ioe) {
-            logger.error(ioe.getMessage());
-        }
+        sendPacket(packet, RESPONSE_TYPE_METHODS);
     }
 
     private static void requestCurrentFrameInfo(long threadId) {
-        int id = getNewUniqueId();
-        responseProcessor.requestIsSent(id, RESPONSE_TYPE_FRAME_INFO);
-        Packet packet = new Packet(id, EMPTY_FLAGS, THREAD_REFERENCE_COMMAND_SET, FRAMES);
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, THREAD_REFERENCE_COMMAND_SET, FRAMES);
         packet.addDataAsLong(threadId);
         packet.addDataAsInt(0); // current frame
         packet.addDataAsInt(1); // amount of frames to retrieve
-        try {
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (IOException ioe) {
-            logger.error(ioe.getMessage());
-        }
+        sendPacket(packet, RESPONSE_TYPE_FRAME_INFO);
     }
 
     /*
     Either line table or variable table
      */
     private static void requestTableInfo(long classId, long methodId, int cmd) {
-        try {
-            int responseType = cmd ==
-                    LINETABLE_CMD ? RESPONSE_TYPE_LINETABLE : RESPONSE_TYPE_VARIABLETABLE;
-            int id = getNewUniqueId();
-            responseProcessor.requestIsSent(id, responseType);
-            Packet packet = new Packet(id, EMPTY_FLAGS, METHOD_COMMAND_SET, cmd);
-            packet.addDataAsLong(classId);
-            packet.addDataAsLong(methodId);
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (Exception e) {
-            logger.error("something went wrong during requesting the table: " + e.getMessage());
-        }
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, METHOD_COMMAND_SET, cmd);
+        packet.addDataAsLong(classId);
+        packet.addDataAsLong(methodId);
+        sendPacket(packet, cmd == LINETABLE_CMD ? RESPONSE_TYPE_LINETABLE : RESPONSE_TYPE_VARIABLETABLE);
     }
 
     /*
@@ -378,35 +311,25 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void requestResume() {
-        try {
-            sendEmptyPacket(getNewUniqueId(), VIRTUAL_MACHINE_COMMAND_SET, RESUME_CMD, RESPONSE_TYPE_NONE);
-        } catch (Exception e) {
-            logger.error("something went wrong during resuming the JVM");
-        }
+        sendPacket(new Packet(getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, RESUME_CMD), RESPONSE_TYPE_NONE);
     }
 
     private static void requestExit() {
-        try {
-            int exitCode = EXIT_CODE_OK;
-            Packet packet = new Packet(id, EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, EXIT_CMD);
-            packet.addDataAsInt(exitCode);
-            out.write(packet.getPacketBytes());
-            out.flush();
-            System.exit(exitCode);
-        } catch (Exception e) {
-            logger.error("something went wrong during exiting");
-        }
+        int exitCode = EXIT_CODE_OK;
+        Packet packet = new Packet(id, EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, EXIT_CMD);
+        packet.addDataAsInt(exitCode);
+        sendPacket(packet, EXIT_CMD);
+        System.exit(exitCode);
     }
 
     private static void userRequestClearBreakpoints() {
-        try {
-            sendEmptyPacket(getNewUniqueId(),
-                    EVENT_REQUEST_COMMAND_SET,
-                    CLEAR_ALL_BREAKPOINTS_CMD,
-                    RESPONSE_TYPE_NONE);
-        } catch (Exception e) {
-            logger.error(e.toString());
-        }
+        sendPacket(
+                new Packet(
+                        getNewUniqueId(),
+                        EMPTY_FLAGS,
+                        EVENT_REQUEST_COMMAND_SET,
+                        CLEAR_ALL_BREAKPOINTS_CMD
+                ), RESPONSE_TYPE_NONE);
     }
 
     private static void finishAndStop() {
@@ -467,9 +390,7 @@ public class Debyter implements ResponseListener, UserInputListener {
             )
         ).ifPresent(visibleVariables -> {
                     if (visibleVariables.size() > 0) {
-                        int id = getNewUniqueId();
-                        responseProcessor.requestIsSent(id, RESPONSE_TYPE_LOCAL_VARIABLES);
-                        Packet packet = new Packet(id, EMPTY_FLAGS, STACK_FRAME_COMMAND_SET, GET_VALUES);
+                        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, STACK_FRAME_COMMAND_SET, GET_VALUES);
                         packet.addDataAsLong(currentState.getThreadId());
                         packet.addDataAsLong(frameId);
                         packet.addDataAsInt(visibleVariables.size()); // amount of variables
@@ -477,12 +398,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                             packet.addDataAsInt(variable.slot()); // index in locals array
                             packet.addDataAsByte(Type.getTypeBySignature(variable.signature()));
                         }
-                        try {
-                            out.write(packet.getPacketBytes());
-                            out.flush();
-                        } catch (IOException ioe) {
-                            logger.error(ioe.getMessage());
-                        }
+                        sendPacket(packet, RESPONSE_TYPE_LOCAL_VARIABLES);
                     }
                 }
         );
