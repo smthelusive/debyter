@@ -55,6 +55,7 @@ public class UserInputProcessor extends Thread {
                     logger.info("clearing breakpoints...");
                     userInputListeners.forEach(userInputListener ->
                             userInputListener.addEventToTheQueue(new UserCommand(UserCommandType.CLEAR, new String[0])));
+                    break;
             }
         }
     }

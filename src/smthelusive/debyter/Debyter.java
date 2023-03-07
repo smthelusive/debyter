@@ -21,24 +21,18 @@ import static smthelusive.debyter.constants.Constants.*;
 import static smthelusive.debyter.Utils.*;
 import static smthelusive.debyter.constants.ResponseType.*;
 
+// todo rethink the flow of response processing...
+// todo set breakpoints using class names together with method names and code index
 public class Debyter implements ResponseListener, UserInputListener {
 
     private static Socket clientSocket;
     private static OutputStream out;
     private static InputStream in;
-    private static long classId;
-    private static long threadId;
-
     private static final BlockingQueue<ResponsePacket> responsePackets = new LinkedBlockingQueue<>();
     private static final BlockingQueue<UserCommand> userCommands = new LinkedBlockingQueue<>();
-
-    private static VariableTable variableTable;
-    private static LineTable lineTable;
-    private static Location location;
-    private static byte[] bytecodes;
+    private static CurrentState currentState = new CurrentState(); // todo this is not very nice
     private static ResponseProcessor responseProcessor;
     private static UserInputProcessor userInputProcessor;
-    private static List<AMethod> methods;
     private static boolean keepProcessing = true;
     private static final Logger logger = LoggerFactory.getLogger(Debyter.class);
     private static int id = 0;
@@ -48,7 +42,7 @@ public class Debyter implements ResponseListener, UserInputListener {
         return id++;
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws Exception { // todo no classname arguments
         if (args.length != 1) {
             logger.error("wrong amount of incoming parameters. " +
                     "please specify the full class name");
@@ -97,12 +91,20 @@ public class Debyter implements ResponseListener, UserInputListener {
         batch.forEach(responsePacket -> {
             switch (responsePacket.getResponseType()) {
                 case RESPONSE_TYPE_COMPOSITE_EVENT -> responsePacket.getEventsList().forEach(Debyter::processEvent);
-                case RESPONSE_TYPE_FRAME_INFO -> frameIdObtained(responsePacket.getFrameId());
-                case RESPONSE_TYPE_BYTECODES -> bytecodes = responsePacket.getBytecodes();
-                case RESPONSE_TYPE_VARIABLETABLE -> variableTable = responsePacket.getVariableTable();
-                case RESPONSE_TYPE_LINETABLE -> lineTable = responsePacket.getLineTable();
-                case RESPONSE_TYPE_LOCAL_VARIABLES -> variablesReceived(responsePacket.getGenericVariables());
-                case RESPONSE_TYPE_CLASS_INFO -> {}
+                case RESPONSE_TYPE_FRAME_INFO -> requestLocalVariables(responsePacket.getFrameId());
+                case RESPONSE_TYPE_BYTECODES -> {
+                    currentState.setBytecodes(responsePacket.getBytecodes());
+
+
+                }
+                case RESPONSE_TYPE_VARIABLETABLE -> currentState.setVariableTable(responsePacket.getVariableTable());
+                case RESPONSE_TYPE_LINETABLE -> logger.info("Linetable received: " + responsePacket.getLineTable());
+                case RESPONSE_TYPE_LOCAL_VARIABLES -> {
+                    logCurrentMethod();
+                    logCurrentOperation();
+                    logLocalVariables(responsePacket.getGenericVariables());
+                }
+                case RESPONSE_TYPE_CLASS_INFO -> {} // todo currentState.setClassId(responsePacket.getClassId());
                 case RESPONSE_TYPE_EVENT_REQUEST -> logger.info("event request registered");
                 case RESPONSE_TYPE_METHODS -> methodsInfoObtained(responsePacket.getMethods());
                 case RESPONSE_TYPE_STRING_VALUE -> logger.info("String, value: " + responsePacket.getStringValue());
@@ -113,10 +115,10 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static void processEvent(Event event) {
         switch (event.getInternalEventType()) {
             case VM_START -> logger.info("VM started");
-            case VM_DEATH -> vmDeathEventReceived();
+            case VM_DEATH -> finishAndStop();
             case BREAKPOINT_HIT -> {
-                location = event.getLocation();
-                breakPointHit(event.getThread(), location);
+                logger.info("BREAKPOINT HIT line #" + event.getLocation().codeIndex());
+                processHitLocation(event.getThread(), event.getLocation());
             }
             case STEP_HIT -> {
                 if (responseProcessor.isStepOverRequestActive()) {
@@ -124,12 +126,14 @@ public class Debyter implements ResponseListener, UserInputListener {
                     responseProcessor.resetStepOverRequestId();
                     requestClearEvent(EVENT_KIND_SINGLE_STEP, requestId);
                 }
-                location = event.getLocation();
-                breakPointHit(event.getThread(), location);
+                logger.info("STEP OVER HIT line #" + event.getLocation().codeIndex());
+                processHitLocation(event.getThread(), event.getLocation());
             }
             case CLASS_LOADED -> {
-                threadId = event.getThread();
-                classIsLoaded(event.getRefTypeId());
+                currentState.setThreadId(event.getThread());
+                currentState.setClassId(event.getRefTypeId());
+                requestMethodsOfClassInfo(event.getRefTypeId());
+//                classIsLoaded(event.getRefTypeId());
             }
         }
     }
@@ -162,12 +166,12 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    private static void idSizes() throws Exception {
-        sendEmptyPacket(getNewUniqueId(),
-                VIRTUAL_MACHINE_COMMAND_SET,
-                ID_SIZES_CMD,
-                RESPONSE_TYPE_ID_SIZES);
-    }
+//    private static void idSizes() throws Exception {
+//        sendEmptyPacket(getNewUniqueId(),
+//                VIRTUAL_MACHINE_COMMAND_SET,
+//                ID_SIZES_CMD,
+//                RESPONSE_TYPE_ID_SIZES);
+//    }
 
     private static void allClasses() throws Exception {
         sendEmptyPacket(getNewUniqueId(),
@@ -176,12 +180,12 @@ public class Debyter implements ResponseListener, UserInputListener {
         RESPONSE_TYPE_ALL_CLASSES);
     }
 
-    private static void capabilitiesNew() throws Exception {
-        sendEmptyPacket(getNewUniqueId(),
-        VIRTUAL_MACHINE_COMMAND_SET,
-        CAPABILITIES_NEW_CMD,
-        RESPONSE_TYPE_NONE);
-    }
+//    private static void capabilitiesNew() throws Exception {
+//        sendEmptyPacket(getNewUniqueId(),
+//        VIRTUAL_MACHINE_COMMAND_SET,
+//        CAPABILITIES_NEW_CMD,
+//        RESPONSE_TYPE_NONE);
+//    }
 
     private static void sendEmptyPacket(int id, int commandSet, int command, int responseType) throws Exception {
         sendHeader(EMPTY_PACKET_SIZE, id, EMPTY_FLAGS, commandSet, command, responseType);
@@ -268,12 +272,11 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void userRequestBreakpoint(String methodName, long codeIndex) {
-        long methodId = methods.stream()
+        long methodId = currentState.getMethods().stream()
                 .filter(method -> method.name().equals(methodName))
                 .findAny().map(AMethod::methodId).orElse(0L);
-        requestLineTableInfo(classId, methodId);
-        requestByteCodes(classId, methodId);
-        requestVariableTableInfo(classId, methodId);
+        long classId = currentState.getClassId();
+        requestLineTableInfo(classId, methodId); // todo put this somewhere else
         requestBreakpointEvent(classId, methodId, codeIndex);
     }
 
@@ -306,7 +309,7 @@ public class Debyter implements ResponseListener, UserInputListener {
             packet.addDataAsByte(SuspendPolicy.ALL);
             packet.addDataAsInt(1); // modifiers
             packet.addDataAsByte(ModKind.STEP);
-            packet.addDataAsLong(threadId);
+            packet.addDataAsLong(currentState.getThreadId());
             packet.addDataAsInt(Step.STEP_MIN);
             packet.addDataAsInt(Step.STEP_OVER);
             out.write(packet.getPacketBytes());
@@ -344,25 +347,6 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    private static void requestLocalVariables(long threadId, long frameId, List<Variable> variables) {
-        int id = getNewUniqueId();
-        responseProcessor.requestIsSent(id, RESPONSE_TYPE_LOCAL_VARIABLES);
-        Packet packet = new Packet(id, EMPTY_FLAGS, STACK_FRAME_COMMAND_SET, GET_VALUES);
-        packet.addDataAsLong(threadId);
-        packet.addDataAsLong(frameId);
-        packet.addDataAsInt(variables.size()); // amount of variables
-        for (Variable variable: variables) {
-            packet.addDataAsInt(variable.slot()); // index in locals array
-            packet.addDataAsByte(Type.getTypeBySignature(variable.signature()));
-        }
-        try {
-            out.write(packet.getPacketBytes());
-            out.flush();
-        } catch (IOException ioe) {
-            logger.error(ioe.getMessage());
-        }
-    }
-
     /*
     Either line table or variable table
      */
@@ -383,7 +367,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     /*
-    this returns info to be able to map bytecode operation indices to java code line numbers
+        this returns info to be able to map bytecode operation indices to java code line numbers
      */
     private static void requestLineTableInfo(long classId, long methodId) {
         requestTableInfo(classId, methodId, LINETABLE_CMD);
@@ -403,7 +387,7 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void requestExit() {
         try {
-            int exitCode = 0; // ok
+            int exitCode = EXIT_CODE_OK;
             Packet packet = new Packet(id, EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, EXIT_CMD);
             packet.addDataAsInt(exitCode);
             out.write(packet.getPacketBytes());
@@ -425,41 +409,86 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    private static void vmDeathEventReceived() {
+    private static void finishAndStop() {
         responseProcessor.finishProcessing();
         userInputProcessor.finishProcessing();
         stopConnection();
         keepProcessing = false;
     }
 
-    private static void classIsLoaded(long refTypeId) {
-        classId = refTypeId;
-        try {
-            requestMethodsOfClassInfo(refTypeId);
-        } catch (Exception e) {
-            logger.error("something went wrong during obtaining methods info");
+    private static void methodsInfoObtained(List<AMethod> methodList) {
+        currentState.setMethods(methodList);
+        if (!userCanInteract) { // we are here first time when the first class is being loaded. do rewrite this bit
+            userCanInteract = true;
+            logger.info("class is ready to be debugged. please enter command");
         }
     }
 
-    private static void methodsInfoObtained(List<AMethod> methodList) {
-        methods = methodList;
-        userCanInteract = true;
-        logger.info("class is ready to be debugged. please enter command");
+    private static void logCurrentMethod() {
+        currentState.getMethods().forEach(method ->
+                currentState.getLocation().ifPresent(l -> {
+                    if (l.methodId() == method.methodId()) {
+                        logger.info("current method: " + method.name());
+                    }
+                }));
     }
 
-    private static void breakPointHit(long threadId, Location location) {
-        logger.info("BREAKPOINT HIT line #" + location.codeIndex());
+    private static void processHitLocation(long threadId, Location location) {
+        if (currentState.getClassId() != location.classId() ||
+                currentState.getLocation().filter(l ->
+                        l.methodId() == location.methodId()).isEmpty()) {
+            long classId = location.classId();
+            long methodId = location.methodId();
+            if (currentState.getClassId() != classId) {
+                requestMethodsOfClassInfo(classId);
+            }
+            requestByteCodes(classId, methodId);
+            requestVariableTableInfo(classId, methodId);
+        }
+        currentState.setLocation(location);
         requestCurrentFrameInfo(threadId);
     }
 
-    private static void frameIdObtained(long frameId) {
-        List<Variable> visibleVariables = variableTable.getVariables().stream()
-                .filter(variable -> location.codeIndex() > variable.codeIndex() &&
-                        location.codeIndex() < variable.codeIndex() + variable.length()).toList();
-        requestLocalVariables(threadId, frameId, visibleVariables);
+    private static void logCurrentOperation() {
+        currentState.getBytecodes().ifPresent(byteCodes ->
+                currentState.getLocation().map(Location::codeIndex).ifPresent(codeIndex ->
+                        logger.info("current operation: " +
+                                (codeIndex < byteCodes.length ?
+                                        BYTECODE_OPERATIONS.get(byteCodes[codeIndex.intValue()]) :
+                                        "unknown"))));
     }
 
-    private static void variablesReceived(List<GenericVariable> variables) {
+    private static void requestLocalVariables(long frameId) {
+        currentState.getLocation().map(Location::codeIndex).flatMap(codeIndex ->
+            currentState.getVariableTable().map(variableTable ->
+                variableTable.getVariables().stream()
+                        .filter(variable -> codeIndex > variable.codeIndex() &&
+                                codeIndex < variable.codeIndex() + variable.length()).toList()
+            )
+        ).ifPresent(visibleVariables -> {
+                    if (visibleVariables.size() > 0) {
+                        int id = getNewUniqueId();
+                        responseProcessor.requestIsSent(id, RESPONSE_TYPE_LOCAL_VARIABLES);
+                        Packet packet = new Packet(id, EMPTY_FLAGS, STACK_FRAME_COMMAND_SET, GET_VALUES);
+                        packet.addDataAsLong(currentState.getThreadId());
+                        packet.addDataAsLong(frameId);
+                        packet.addDataAsInt(visibleVariables.size()); // amount of variables
+                        for (Variable variable : visibleVariables) {
+                            packet.addDataAsInt(variable.slot()); // index in locals array
+                            packet.addDataAsByte(Type.getTypeBySignature(variable.signature()));
+                        }
+                        try {
+                            out.write(packet.getPacketBytes());
+                            out.flush();
+                        } catch (IOException ioe) {
+                            logger.error(ioe.getMessage());
+                        }
+                    }
+                }
+        );
+    }
+
+    private static void logLocalVariables(List<GenericVariable> variables) {
         logger.info("LOCAL VARIABLES:");
         for (GenericVariable variable: variables) {
             switch (variable.type()) {

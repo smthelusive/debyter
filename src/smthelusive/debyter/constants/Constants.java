@@ -9,6 +9,7 @@ public class Constants {
     public static final String JDWP_HANDSHAKE = "JDWP-Handshake";
     public static final int HANDSHAKE_SIZE = 14;
     public static final int EMPTY_FLAGS = 0;
+    public static final int EXIT_CODE_OK = 0;
     public static final int EMPTY_PACKET_SIZE = 11;
     public static final int LONG_LENGTH_BYTES = 8;
     public static final int SHORT_LENGTH_BYTES = 2;

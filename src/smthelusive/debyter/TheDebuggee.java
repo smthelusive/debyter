@@ -46,3 +46,48 @@ public static void main(java.lang.String[]);
         }
 
 */
+
+
+
+/*
+12:11:21.938 [main] INFO smthelusive.debyter.Debyter - Bytecodes received:
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - iconst_0
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - istore_1
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - iinc
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - aconst_null
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - pop2
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - getstatic
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - iconst_4
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - iload_1
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - invokevirtual
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - fconst_2
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - iinc
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - aconst_null
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - impdep2
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - iload_1
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - iload_1
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - imul
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - istore_1
+12:11:21.943 [main] INFO smthelusive.debyter.Debyter - iload_1
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - invokedynamic
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - ldc_w
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - astore_2
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - getstatic
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - iconst_4
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - aload_2
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - invokedynamic
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - fload
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - invokevirtual
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - nop
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - iload_0
+12:11:21.944 [main] INFO smthelusive.debyter.Debyter - return
+ */
