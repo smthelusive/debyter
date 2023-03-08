@@ -28,4 +28,8 @@ public class Utils {
     public static short byteArrayToShort(byte[] input) {
         return ByteBuffer.wrap(input).getShort();
     }
+
+    public static String getInternalRepresentationOfObjectType(String type) {
+        return "L" + type.replace(".", "/") + ";";
+    }
 }

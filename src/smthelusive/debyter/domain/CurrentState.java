@@ -1,31 +1,68 @@
 package smthelusive.debyter.domain;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 public class CurrentState {
-    private long classId;
     private Location location;
     private byte[] bytecodes;
     private VariableTable variableTable;
     private long threadId;
-    private List<AMethod> methods = new ArrayList<>();
+    private Map<Long, Set<AMethod>> methodsByClassId = new HashMap<>();
 
-    public long getClassId() {
-        return classId;
+    private List<AClass> classes = new ArrayList<>();
+
+    public List<AClass> getClasses() {
+        return classes;
     }
 
-    public void setClassId(long classId) {
-        this.classId = classId;
+    public void setClasses(List<AClass> classes) {
+        this.classes = classes;
     }
 
-    public List<AMethod> getMethods() {
-        return methods;
+    public void addClass(AClass aClass) {
+        classes.add(aClass);
     }
 
-    public void setMethods(List<AMethod> methods) {
-        this.methods = methods;
+    public Long getClassIdByName(String className) {
+        return classes.stream()
+                .filter(aClass -> aClass.signature().equals(className))
+                .map(AClass::refTypeTag)
+                .findAny()
+                .orElse(0L);
+    }
+
+    public Long getMethodIdByClassAndName(Long classId, String methodName) {
+        return methodsByClassId.get(classId).stream().filter(method -> method.name().equals(methodName))
+                .map(AMethod::methodId).findAny().orElse(0L);
+    }
+
+    public boolean classMethodInfoAvailable(String className, String methodName) {
+        return classes.stream().filter(aClass -> aClass.signature().equals(className)).flatMap(aClass ->
+                methodsByClassId.get(aClass.refTypeTag()).stream().filter(method -> method.name().equals(methodName)))
+                .findAny().isPresent();
+    }
+
+
+    public Map<Long, Set<AMethod>> getMethodsByClassId() {
+        return methodsByClassId;
+    }
+
+    public Optional<Set<AMethod>> getMethodsOfClassId(long classId) {
+        return Optional.ofNullable(getMethodsByClassId().get(classId));
+    }
+
+    public void addMethodForClassId(Long classId, AMethod method) {
+        if (Optional.ofNullable(methodsByClassId.get(classId)).isEmpty()) {
+            Set<AMethod> set = new HashSet<>();
+            methodsByClassId.put(classId, set);
+        }
+        methodsByClassId.get(classId).add(method);
+    }
+
+    public boolean isNewLocationClassOrMethod(Location location) {
+        if (location == null) return false;
+        return (this.location == null || (
+                this.location.methodId() != location.methodId() || this.location.classId() != location.classId()));
     }
 
     public Optional<Location> getLocation() {

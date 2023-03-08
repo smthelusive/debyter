@@ -8,8 +8,7 @@ import smthelusive.debyter.domain.*;
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -22,7 +21,8 @@ import static smthelusive.debyter.Utils.*;
 import static smthelusive.debyter.constants.ResponseType.*;
 
 // todo rethink the flow of response processing...
-// todo set breakpoints using class names together with method names and code index
+// todo when app is already running we will never receive class loaded events
+// todo make a packet builder?
 public class Debyter implements ResponseListener, UserInputListener {
 
     private static Socket clientSocket;
@@ -36,18 +36,19 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static boolean keepProcessing = true;
     private static final Logger logger = LoggerFactory.getLogger(Debyter.class);
     private static int id = 0;
-    private static boolean userCanInteract = false;
+    private static final HashSet<DeferredBreakpoint> deferredBreakpoints = new HashSet<>();
 
     private static int getNewUniqueId() {
         return id++;
     }
 
-    public static void main(String[] args) throws Exception { // todo no classname arguments
-        if (args.length != 1) {
-            logger.error("wrong amount of incoming parameters. " +
-                    "please specify the full class name");
-            return;
-        }
+    private static final HashMap<Integer, Long> listMethodsRequestsForClass = new HashMap<>();
+
+    private static void createDeferredBreakpoint(String className, String methodName, long codeIndex) {
+        deferredBreakpoints.add(new DeferredBreakpoint(className, methodName, codeIndex));
+    }
+
+    public static void main(String[] args) {
         startConnection(LOCALHOST, PORT);
         jdwpHandshake();
         Debyter debyter = new Debyter();
@@ -57,11 +58,9 @@ public class Debyter implements ResponseListener, UserInputListener {
         responseProcessor = new ResponseProcessor(in);
         responseProcessor.addListener(debyter);
         responseProcessor.start();
-        requestClassPrepareEvent(args[0]);
-        requestResume();
         while (keepProcessing) {
             processAllResponsePackets();
-            if (userCanInteract) processAUserCommand();
+            processAUserCommand();
         }
     }
 
@@ -70,12 +69,13 @@ public class Debyter implements ResponseListener, UserInputListener {
             UserCommand userCommand = userCommands.poll();
             switch (userCommand.userCommandType()) {
                 case BREAKPOINT -> {
-                    if (userCommand.params().length != 2)
-                        logger.error("please specify method name and line number to set the breakpoint");
+                    if (userCommand.params().length != 3)
+                        logger.error("please specify class name, method name and line number to set the breakpoint");
                     else {
                         userRequestBreakpoint(
                                 userCommand.params()[0],
-                                Integer.parseInt(userCommand.params()[1]));
+                                userCommand.params()[1],
+                                Integer.parseInt(userCommand.params()[2]));
                     }
                 }
                 case STEP_OVER -> requestStepOverEvents();
@@ -92,22 +92,18 @@ public class Debyter implements ResponseListener, UserInputListener {
         batch.forEach(responsePacket -> {
             switch (responsePacket.getResponseType()) {
                 case RESPONSE_TYPE_COMPOSITE_EVENT -> responsePacket.getEventsList().forEach(Debyter::processEvent);
-                case RESPONSE_TYPE_FRAME_INFO -> requestLocalVariables(responsePacket.getFrameId());
-                case RESPONSE_TYPE_BYTECODES -> {
-                    currentState.setBytecodes(responsePacket.getBytecodes());
-
-
+                case RESPONSE_TYPE_FRAME_INFO -> {
+                    logCurrentLocation();
+                    requestLocalVariables(responsePacket.getFrameId());
                 }
+                case RESPONSE_TYPE_BYTECODES -> currentState.setBytecodes(responsePacket.getBytecodes());
                 case RESPONSE_TYPE_VARIABLETABLE -> currentState.setVariableTable(responsePacket.getVariableTable());
                 case RESPONSE_TYPE_LINETABLE -> logger.info("Linetable received: " + responsePacket.getLineTable());
-                case RESPONSE_TYPE_LOCAL_VARIABLES -> {
-                    logCurrentMethod();
-                    logCurrentOperation();
-                    logLocalVariables(responsePacket.getGenericVariables());
-                }
-                case RESPONSE_TYPE_CLASS_INFO -> {} // todo currentState.setClassId(responsePacket.getClassId());
+                case RESPONSE_TYPE_LOCAL_VARIABLES -> logLocalVariables(responsePacket.getGenericVariables());
+                case RESPONSE_TYPE_CLASS_INFO -> {}
+                case RESPONSE_TYPE_ALL_CLASSES -> currentState.setClasses(responsePacket.getClasses());
                 case RESPONSE_TYPE_EVENT_REQUEST -> logger.info("event request registered");
-                case RESPONSE_TYPE_METHODS -> methodsInfoObtained(responsePacket.getMethods());
+                case RESPONSE_TYPE_METHODS -> methodsInfoObtained(responsePacket.getId(), responsePacket.getMethods());
                 case RESPONSE_TYPE_STRING_VALUE -> logger.info("String, value: " + responsePacket.getStringValue());
             }
         });
@@ -131,8 +127,9 @@ public class Debyter implements ResponseListener, UserInputListener {
                 processHitLocation(event.getThread(), event.getLocation());
             }
             case CLASS_LOADED -> {
+                logger.info("class loaded: " + event.getRefTypeId());
                 currentState.setThreadId(event.getThread());
-                currentState.setClassId(event.getRefTypeId());
+                requestAllClasses();
                 requestMethodsOfClassInfo(event.getRefTypeId());
             }
         }
@@ -160,16 +157,6 @@ public class Debyter implements ResponseListener, UserInputListener {
                         VIRTUAL_MACHINE_COMMAND_SET,
                         ALL_CLASSES_CMD
                 ), RESPONSE_TYPE_ALL_CLASSES);
-    }
-
-    private static void sendHeader(int length, int id, int flags, int commandSet,
-                                   int command, int responseType) throws Exception {
-        if (responseType != RESPONSE_TYPE_NONE) responseProcessor.requestIsSent(id, responseType);
-        out.write(getBytesOfInt(length));
-        out.write(getBytesOfInt(id));
-        out.write(getByteOfInt(flags));
-        out.write(getByteOfInt(commandSet));
-        out.write(getByteOfInt(command));
     }
 
     private static void requestStringValue(long stringId) {
@@ -241,13 +228,21 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    private static void userRequestBreakpoint(String methodName, long codeIndex) {
-        long methodId = currentState.getMethods().stream()
-                .filter(method -> method.name().equals(methodName))
-                .findAny().map(AMethod::methodId).orElse(0L);
-        long classId = currentState.getClassId();
-        requestLineTableInfo(classId, methodId); // todo put this somewhere else
-        requestBreakpointEvent(classId, methodId, codeIndex);
+    private static void userRequestBreakpoint(String className, String methodName, long codeIndex) {
+        try {
+            if (!currentState.classMethodInfoAvailable(className, methodName)) {
+                logger.info("class info is not available yet, setting the deferred breakpoint...");
+                requestClassPrepareEvent(className);
+//                requestResume();
+                createDeferredBreakpoint(className, methodName, codeIndex);
+            } else {
+                long classId = currentState.getClassIdByName(className);
+                logger.info("requesting breakpoint right away");
+                requestBreakpointEvent(classId, currentState.getMethodIdByClassAndName(classId, methodName), codeIndex);
+            }
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+        }
     }
 
     private static void requestBreakpointEvent(long classId, long methodId, long codeIndex) {
@@ -276,7 +271,9 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void requestMethodsOfClassInfo(long typeID) {
-        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, REFERENCE_TYPE_COMMAND_SET, METHODS_CMD);
+        int id = getNewUniqueId();
+        listMethodsRequestsForClass.put(id, typeID);
+        Packet packet = new Packet(id, EMPTY_FLAGS, REFERENCE_TYPE_COMMAND_SET, METHODS_CMD);
         packet.addDataAsLong(typeID);
         sendPacket(packet, RESPONSE_TYPE_METHODS);
     }
@@ -290,7 +287,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     /*
-    Either line table or variable table
+        either line table or variable table
      */
     private static void requestTableInfo(long classId, long methodId, int cmd) {
         Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, METHOD_COMMAND_SET, cmd);
@@ -339,30 +336,52 @@ public class Debyter implements ResponseListener, UserInputListener {
         keepProcessing = false;
     }
 
-    private static void methodsInfoObtained(List<AMethod> methodList) {
-        currentState.setMethods(methodList);
-        if (!userCanInteract) { // we are here first time when the first class is being loaded. do rewrite this bit
-            userCanInteract = true;
-            logger.info("class is ready to be debugged. please enter command");
+    private static void methodsInfoObtained(int id, List<AMethod> methodList) {
+        long classId = listMethodsRequestsForClass.get(id);
+        for (AMethod method : methodList) {
+            currentState.addMethodForClassId(classId, method);
         }
+        listMethodsRequestsForClass.remove(id);
+        currentState.getClasses().stream()
+                .filter(aClass -> aClass.typeID() == classId)
+                        .map(AClass::signature).forEach(className ->
+                    currentState.getMethodsOfClassId(classId).ifPresent(methodSet -> methodSet.forEach(method ->
+                        deferredBreakpoints.forEach(breakpoint -> {
+                            if (Utils.getInternalRepresentationOfObjectType(breakpoint.className()).equals(className) &&
+                                    breakpoint.methodName().equals(method.name())) {
+                                logger.info("requesting breakpoint that has been deferred: {}", breakpoint);
+                                deferredBreakpoints.remove(breakpoint);
+                                requestBreakpointEvent(classId, method.methodId(), breakpoint.codeIndex());
+                            }
+                        }))));
+    }
+
+    private static void logCurrentLocation() {
+        logCurrentClass();
+        logCurrentMethod();
+        logCurrentOperation();
     }
 
     private static void logCurrentMethod() {
-        currentState.getMethods().forEach(method ->
-                currentState.getLocation().ifPresent(l -> {
-                    if (l.methodId() == method.methodId()) {
-                        logger.info("current method: " + method.name());
-                    }
-                }));
+        currentState.getLocation().stream().flatMap(location ->
+                currentState.getMethodsOfClassId(location.classId()).stream().flatMap(Collection::stream)
+                        .filter(method -> method.methodId() == location.methodId()))
+                                .forEach(method -> logger.info("current method: " + method.name()));
+    }
+
+    private static void logCurrentClass() {
+        currentState.getLocation().ifPresent(location ->
+                        currentState.getClasses().stream().filter(aClass -> aClass.typeID() == location.classId())
+                                .forEach(aClass -> logger.info("current class: " + aClass.signature())));
     }
 
     private static void processHitLocation(long threadId, Location location) {
-        if (currentState.getClassId() != location.classId() ||
-                currentState.getLocation().filter(l ->
-                        l.methodId() == location.methodId()).isEmpty()) {
+        if (currentState.isNewLocationClassOrMethod(location)) {
             long classId = location.classId();
             long methodId = location.methodId();
-            if (currentState.getClassId() != classId) {
+            if ((currentState.getLocation().isEmpty() ||
+                    currentState.getLocation().get().classId() != classId) &&
+                    currentState.getMethodsOfClassId(classId).isEmpty()) {
                 requestMethodsOfClassInfo(classId);
             }
             requestByteCodes(classId, methodId);

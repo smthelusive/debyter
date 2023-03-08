@@ -29,12 +29,12 @@ public class UserInputProcessor extends Thread {
             String[] command = sc.nextLine().split("\\s");
             switch (command[0]) {
                 case "bp":
-                    if (command.length < 3) {
-                        logger.error("please specify method name and code index to set a breakpoint");
+                    if (command.length < 4) {
+                        logger.error("please specify class, method and code index to set a breakpoint");
                     } else {
                         userInputListeners.forEach(userInputListener ->
                                 userInputListener.addEventToTheQueue(new UserCommand(UserCommandType.BREAKPOINT,
-                                        new String[]{command[1], command[2]})));
+                                        new String[]{command[1], command[2], command[3]})));
                     }
                     break;
                 case "step":
