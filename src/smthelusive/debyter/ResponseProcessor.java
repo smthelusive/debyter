@@ -25,28 +25,26 @@ public class ResponseProcessor extends Thread {
     private final Logger logger = LoggerFactory.getLogger(ResponseProcessor.class);
     private int lastPos;
 
-    private final List<Integer> stepOverRequests = new ArrayList<>();
+    private final Set<Integer> stepOverRequests = new HashSet<>();
+
+    private final Set<Integer> stepOverRegisteredRequests = new HashSet<>();
 
     private final ArrayList<ResponseListener> responseListeners = new ArrayList<>();
+
+    public void addStepOverRequest(int request) {
+        stepOverRequests.add(request);
+    }
 
     public void requestIsSent(int id, int expectedResponseType) {
         requestsSent.put(id, expectedResponseType);
     }
 
-    public boolean isStepOverRequestActive() {
-        return !stepOverRequests.isEmpty();
-    }
-
-    public List<Integer> getStepOverRequests() {
-        return stepOverRequests;
+    public Set<Integer> getStepOverRegisteredRequests() {
+        return stepOverRegisteredRequests;
     }
 
     public void resetStepOverRequests() {
-        stepOverRequests.clear();
-    }
-
-    public void addStepOverRequest(int requestId) {
-        stepOverRequests.add(requestId);
+        stepOverRegisteredRequests.clear();
     }
 
     public void finishProcessing() {
@@ -113,6 +111,10 @@ public class ResponseProcessor extends Thread {
                     int requestId = getIntFromData(result);
                     requestIsSent(idValue, requestId);
                     responsePacket.setId(requestId);
+                    if (stepOverRequests.contains(idValue)) {
+                        stepOverRequests.remove(idValue);
+                        stepOverRegisteredRequests.add(requestId);
+                    }
                 }
                 case RESPONSE_TYPE_LINETABLE -> responsePacket = parseResponseLinetable(result);
                 case RESPONSE_TYPE_METHODS -> responsePacket = parseResponseMethods(result);
@@ -348,8 +350,6 @@ public class ResponseProcessor extends Thread {
         event.setInternalEventType(eventKind == EVENT_KIND_BREAKPOINT ?
                 EventType.BREAKPOINT_HIT : EventType.STEP_HIT);
         int requestId = getIntFromData(result);
-        if (eventKind == EVENT_KIND_SINGLE_STEP)
-            stepOverRequests.add(requestId); // todo write docs to this because it's not possible to comprehend!
         event.setRequestID(requestId);
         long threadId = getLongFromData(result);
         event.setThread(threadId);

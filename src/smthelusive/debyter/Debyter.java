@@ -121,13 +121,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                 processHitLocation(event.getThread(), event.getLocation());
             }
             case STEP_HIT -> {
-                if (responseProcessor.isStepOverRequestActive()) { // todo document this
-                    ArrayList<Integer> requestsToClean = new ArrayList<>(responseProcessor.getStepOverRequests());
-                    responseProcessor.resetStepOverRequests(); // todo step over requests should be a set
-                    for (Integer requestId : requestsToClean) {
-                        requestClearEvent(EVENT_KIND_SINGLE_STEP, requestId);
-                    }
-                }
+                cleanupAllActiveStepOverRequests();
                 logger.info("STEP OVER HIT line #" + event.getLocation().codeIndex());
                 processHitLocation(event.getThread(), event.getLocation());
             }
@@ -136,6 +130,24 @@ public class Debyter implements ResponseListener, UserInputListener {
                 currentState.setThreadId(event.getThread());
                 requestAllClasses();
                 requestMethodsOfClassInfo(event.getRefTypeId());
+            }
+        }
+    }
+
+    /***
+     * if JVM reported before that step event was registered and this event has been now received,
+     * all step events should be cancelled (it requires a separate packet to be thrown to JVM)
+     * otherwise stepping will continue forever.
+     * there might be more than one request for step event,
+     * because sometimes no information on the thread is present, so it's requested for every active thread.
+     */
+    private static void cleanupAllActiveStepOverRequests() {
+        if (!responseProcessor.getStepOverRegisteredRequests().isEmpty()) {
+            // saving to a separate list because in the meantime some more requests might get registered todo check if that's still the case
+            ArrayList<Integer> requestsToClean = new ArrayList<>(responseProcessor.getStepOverRegisteredRequests());
+            responseProcessor.resetStepOverRequests();
+            for (Integer requestId : requestsToClean) {
+                requestClearEvent(EVENT_KIND_SINGLE_STEP, requestId);
             }
         }
     }
@@ -182,7 +194,8 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void sendPacket(Packet packet, int responseType) {
-        if (responseType != RESPONSE_TYPE_NONE) responseProcessor.requestIsSent(packet.getId(), responseType);
+        if (responseType != RESPONSE_TYPE_NONE)
+            responseProcessor.requestIsSent(packet.getId(), responseType);
         try {
             out.write(packet.getPacketBytes());
             out.flush();
@@ -288,7 +301,8 @@ public class Debyter implements ResponseListener, UserInputListener {
         packet.addDataAsLong(threadId);
         packet.addDataAsInt(Step.STEP_MIN);
         packet.addDataAsInt(Step.STEP_OVER);
-        sendPacket(packet, RESPONSE_TYPE_SINGLE_STEP);
+        sendPacket(packet, RESPONSE_TYPE_COMPOSITE_EVENT);
+        // registering it so later it can be cancelled:
         responseProcessor.addStepOverRequest(requestId);
     }
 
