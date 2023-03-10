@@ -11,18 +11,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 
 import static smthelusive.debyter.constants.Command.*;
 import static smthelusive.debyter.constants.CommandSet.*;
 import static smthelusive.debyter.constants.EventKind.*;
 import static smthelusive.debyter.constants.Constants.*;
-import static smthelusive.debyter.Utils.*;
 import static smthelusive.debyter.constants.ResponseType.*;
 
-// todo rethink the flow of response processing...
-// todo when app is already running we will never receive class loaded events
-// todo make a packet builder?
 public class Debyter implements ResponseListener, UserInputListener {
 
     private static Socket clientSocket;
@@ -30,7 +28,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static InputStream in;
     private static final BlockingQueue<ResponsePacket> responsePackets = new LinkedBlockingQueue<>();
     private static final BlockingQueue<UserCommand> userCommands = new LinkedBlockingQueue<>();
-    private static CurrentState currentState = new CurrentState(); // todo this is not very nice
+    private static final CurrentState currentState = new CurrentState();
     private static ResponseProcessor responseProcessor;
     private static UserInputProcessor userInputProcessor;
     private static boolean keepProcessing = true;
@@ -58,6 +56,8 @@ public class Debyter implements ResponseListener, UserInputListener {
         responseProcessor = new ResponseProcessor(in);
         responseProcessor.addListener(debyter);
         responseProcessor.start();
+        requestAllThreads();
+        requestAllClasses();
         while (keepProcessing) {
             processAllResponsePackets();
             processAUserCommand();
@@ -68,16 +68,10 @@ public class Debyter implements ResponseListener, UserInputListener {
         if (!userCommands.isEmpty()) {
             UserCommand userCommand = userCommands.poll();
             switch (userCommand.userCommandType()) {
-                case BREAKPOINT -> {
-                    if (userCommand.params().length != 3)
-                        logger.error("please specify class name, method name and line number to set the breakpoint");
-                    else {
-                        userRequestBreakpoint(
-                                userCommand.params()[0],
-                                userCommand.params()[1],
-                                Integer.parseInt(userCommand.params()[2]));
-                    }
-                }
+                case BREAKPOINT -> userRequestBreakpoint(
+                        userCommand.params()[0],
+                        userCommand.params()[1],
+                        Integer.parseInt(userCommand.params()[2]));
                 case STEP_OVER -> requestStepOverEvents();
                 case CLEAR -> userRequestClearBreakpoints();
                 case RESUME -> requestResume();
@@ -91,7 +85,9 @@ public class Debyter implements ResponseListener, UserInputListener {
         responsePackets.drainTo(batch);
         batch.forEach(responsePacket -> {
             switch (responsePacket.getResponseType()) {
-                case RESPONSE_TYPE_COMPOSITE_EVENT -> responsePacket.getEventsList().forEach(Debyter::processEvent);
+                case RESPONSE_TYPE_COMPOSITE_EVENT -> {
+                    responsePacket.getEventsList().forEach(Debyter::processEvent);
+                }
                 case RESPONSE_TYPE_FRAME_INFO -> {
                     logCurrentLocation();
                     requestLocalVariables(responsePacket.getFrameId());
@@ -102,8 +98,14 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case RESPONSE_TYPE_LOCAL_VARIABLES -> logLocalVariables(responsePacket.getGenericVariables());
                 case RESPONSE_TYPE_CLASS_INFO -> {}
                 case RESPONSE_TYPE_ALL_CLASSES -> currentState.setClasses(responsePacket.getClasses());
-                case RESPONSE_TYPE_EVENT_REQUEST -> logger.info("event request registered");
-                case RESPONSE_TYPE_METHODS -> methodsInfoObtained(responsePacket.getId(), responsePacket.getMethods());
+                case RESPONSE_TYPE_EVENT_REQUEST -> {}
+                case RESPONSE_TYPE_METHODS -> {
+                    if (Optional.ofNullable(responsePacket.getMethods()).isPresent()) {
+                        methodsInfoObtained(responsePacket.getId(), responsePacket.getMethods());
+                    }
+                }
+                case RESPONSE_TYPE_ALL_THREADS ->
+                        currentState.setActiveThreads(responsePacket.getActiveThreads());
                 case RESPONSE_TYPE_STRING_VALUE -> logger.info("String, value: " + responsePacket.getStringValue());
             }
         });
@@ -118,16 +120,18 @@ public class Debyter implements ResponseListener, UserInputListener {
                 processHitLocation(event.getThread(), event.getLocation());
             }
             case STEP_HIT -> {
-                if (responseProcessor.isStepOverRequestActive()) {
-                    int requestId = responseProcessor.getStepOverRequestId();
-                    responseProcessor.resetStepOverRequestId();
-                    requestClearEvent(EVENT_KIND_SINGLE_STEP, requestId);
+                if (responseProcessor.isStepOverRequestActive()) { // todo document this
+                    ArrayList<Integer> requestsToClean = new ArrayList<>(responseProcessor.getStepOverRequests());
+                    responseProcessor.resetStepOverRequests(); // todo step over requests should be a set
+                    for (Integer requestId : requestsToClean) {
+                        requestClearEvent(EVENT_KIND_SINGLE_STEP, requestId);
+                    }
                 }
                 logger.info("STEP OVER HIT line #" + event.getLocation().codeIndex());
                 processHitLocation(event.getThread(), event.getLocation());
             }
             case CLASS_LOADED -> {
-                logger.info("class loaded: " + event.getRefTypeId());
+                logger.info("class loaded: " + event.getSignature());
                 currentState.setThreadId(event.getThread());
                 requestAllClasses();
                 requestMethodsOfClassInfo(event.getRefTypeId());
@@ -159,6 +163,16 @@ public class Debyter implements ResponseListener, UserInputListener {
                 ), RESPONSE_TYPE_ALL_CLASSES);
     }
 
+    private static void requestAllThreads() {
+        sendPacket(
+                new Packet(
+                        getNewUniqueId(),
+                        EMPTY_FLAGS,
+                        VIRTUAL_MACHINE_COMMAND_SET,
+                        ALL_THREADS_CMD
+                ), RESPONSE_TYPE_ALL_THREADS);
+    }
+
     private static void requestStringValue(long stringId) {
         int id = getNewUniqueId();
         Packet packet = new Packet(id, EMPTY_FLAGS, STRING_REFERENCE_COMMAND_SET, STRING_VALUE_CMD);
@@ -176,22 +190,21 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-    // todo test this
-    private static void requestClassDataBySignature(String signature) {
-        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, CLASSES_BY_SIGNATURE_CMD);
-        packet.addDataAsInt(signature.getBytes().length);
-        packet.addDataAsBytes(signature.getBytes());
-        sendPacket(packet, RESPONSE_TYPE_CLASS_INFO);
-    }
+//    private static void requestClassDataBySignature(String signature) {
+//        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, CLASSES_BY_SIGNATURE_CMD);
+//        packet.addDataAsInt(signature.getBytes().length);
+//        packet.addDataAsBytes(signature.getBytes());
+//        sendPacket(packet, RESPONSE_TYPE_CLASS_INFO);
+//    }
 
-    private static void requestClassPrepareEvent(String className) throws Exception {
+    private static void requestClassPrepareEvent(String className) {
         Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
         packet.addDataAsByte(EVENT_KIND_CLASS_PREPARE);
         packet.addDataAsByte(SuspendPolicy.ALL);
         packet.addDataAsInt(1); // modifiers
         packet.addDataAsByte(ModKind.CLASS_MATCH);
         byte[] classNameBytes = className.getBytes();
-        packet.addDataAsBytes(Utils.getBytesOfInt(classNameBytes.length)); // todo addDataAsInt?
+        packet.addDataAsInt(classNameBytes.length);
         packet.addDataAsBytes(classNameBytes);
         sendPacket(packet, RESPONSE_TYPE_COMPOSITE_EVENT);
 
@@ -230,18 +243,22 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void userRequestBreakpoint(String className, String methodName, long codeIndex) {
         try {
-            if (!currentState.classMethodInfoAvailable(className, methodName)) {
-                logger.info("class info is not available yet, setting the deferred breakpoint...");
-                requestClassPrepareEvent(className);
-//                requestResume();
-                createDeferredBreakpoint(className, methodName, codeIndex);
-            } else {
+            if (currentState.classMethodInfoAvailable(className, methodName)) {
                 long classId = currentState.getClassIdByName(className);
                 logger.info("requesting breakpoint right away");
                 requestBreakpointEvent(classId, currentState.getMethodIdByClassAndName(classId, methodName), codeIndex);
+            } else if (currentState.classInfoAvailable(className)) {
+                logger.info("method info is not yet loaded, setting the deferred breakpoint");
+                requestSuspend();
+                requestMethodsOfClassInfo(currentState.getClassIdByName(className));
+                createDeferredBreakpoint(className, methodName, codeIndex);
+            } else {
+                logger.info("class info is not available yet, setting the deferred breakpoint");
+                requestClassPrepareEvent(className);
+                createDeferredBreakpoint(className, methodName, codeIndex);
             }
         } catch (Exception e) {
-            logger.error(e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -259,15 +276,27 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void requestStepOverEvents() {
-        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
+        if (currentState.getThreadId() != 0) {
+            requestStepOverForThread(currentState.getThreadId());
+        } else {
+            for (Long threadId : currentState.getActiveThreads()) {
+                requestStepOverForThread(threadId);
+            }
+        }
+    }
+
+    private static void requestStepOverForThread(long threadId) {
+        int requestId = getNewUniqueId();
+        Packet packet = new Packet(requestId, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
         packet.addDataAsByte(EVENT_KIND_SINGLE_STEP);
         packet.addDataAsByte(SuspendPolicy.ALL);
         packet.addDataAsInt(1); // modifiers
         packet.addDataAsByte(ModKind.STEP);
-        packet.addDataAsLong(currentState.getThreadId());
+        packet.addDataAsLong(threadId);
         packet.addDataAsInt(Step.STEP_MIN);
         packet.addDataAsInt(Step.STEP_OVER);
         sendPacket(packet, RESPONSE_TYPE_SINGLE_STEP);
+        responseProcessor.addStepOverRequest(requestId);
     }
 
     private static void requestMethodsOfClassInfo(long typeID) {
@@ -282,7 +311,7 @@ public class Debyter implements ResponseListener, UserInputListener {
         Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, THREAD_REFERENCE_COMMAND_SET, FRAMES);
         packet.addDataAsLong(threadId);
         packet.addDataAsInt(0); // current frame
-        packet.addDataAsInt(1); // amount of frames to retrieve
+        packet.addDataAsInt(1); // amount of frames to retrieve, request the top frame only
         sendPacket(packet, RESPONSE_TYPE_FRAME_INFO);
     }
 
@@ -309,6 +338,10 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void requestResume() {
         sendPacket(new Packet(getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, RESUME_CMD), RESPONSE_TYPE_NONE);
+    }
+
+    private static void requestSuspend() {
+        sendPacket(new Packet(getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, SUSPEND_CMD), RESPONSE_TYPE_NONE);
     }
 
     private static void requestExit() {
@@ -349,11 +382,20 @@ public class Debyter implements ResponseListener, UserInputListener {
                         deferredBreakpoints.forEach(breakpoint -> {
                             if (Utils.getInternalRepresentationOfObjectType(breakpoint.className()).equals(className) &&
                                     breakpoint.methodName().equals(method.name())) {
-                                logger.info("requesting breakpoint that has been deferred: {}", breakpoint);
+                                logger.info("requesting breakpoint that was deferred: {}", breakpoint);
                                 deferredBreakpoints.remove(breakpoint);
                                 requestBreakpointEvent(classId, method.methodId(), breakpoint.codeIndex());
                             }
                         }))));
+        /*
+         JVM has been suspended by suspend policy = ALL on receiving CLASS_LOADED event.
+         Suspend was necessary because it's only possible to request frame info when JVM is suspended.
+         Now, since all the info necessary for this class & methods to set breakpoints is available,
+         the resume command can be requested.
+         If JVM was suspended somewhere else too, this resume will only decrement
+         the amount of resume commands that need to be requested for JVM to continue running.
+         */
+        requestResume();
     }
 
     private static void logCurrentLocation() {
@@ -388,6 +430,7 @@ public class Debyter implements ResponseListener, UserInputListener {
             requestVariableTableInfo(classId, methodId);
         }
         currentState.setLocation(location);
+        currentState.setThreadId(threadId);
         requestCurrentFrameInfo(threadId);
     }
 

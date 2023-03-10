@@ -24,10 +24,8 @@ public class ResponseProcessor extends Thread {
     private final Map<Integer, Integer> requestsSent = new HashMap<>();
     private final Logger logger = LoggerFactory.getLogger(ResponseProcessor.class);
     private int lastPos;
-    private long classId;
-    private long threadId;
 
-    private int stepOverRequest = -1;
+    private final List<Integer> stepOverRequests = new ArrayList<>();
 
     private final ArrayList<ResponseListener> responseListeners = new ArrayList<>();
 
@@ -36,15 +34,19 @@ public class ResponseProcessor extends Thread {
     }
 
     public boolean isStepOverRequestActive() {
-        return stepOverRequest != -1;
+        return !stepOverRequests.isEmpty();
     }
 
-    public int getStepOverRequestId() {
-        return stepOverRequest;
+    public List<Integer> getStepOverRequests() {
+        return stepOverRequests;
     }
 
-    public void resetStepOverRequestId() {
-        stepOverRequest = -1;
+    public void resetStepOverRequests() {
+        stepOverRequests.clear();
+    }
+
+    public void addStepOverRequest(int requestId) {
+        stepOverRequests.add(requestId);
     }
 
     public void finishProcessing() {
@@ -104,6 +106,7 @@ public class ResponseProcessor extends Thread {
             switch (type) {
                 case RESPONSE_TYPE_CLASS_INFO -> responsePacket = parseResponseClassInfo(result);
                 case RESPONSE_TYPE_ALL_CLASSES -> responsePacket = parseResponseAllClasses(result);
+                case RESPONSE_TYPE_ALL_THREADS -> responsePacket = parseResponseAllThreads(result);
                 case RESPONSE_TYPE_ID_SIZES -> responsePacket = parseResponseIdSizes(result);
                 case RESPONSE_TYPE_COMPOSITE_EVENT -> responsePacket = parseCompositeEvent(result);
                 case RESPONSE_TYPE_EVENT_REQUEST -> {
@@ -224,6 +227,16 @@ public class ResponseProcessor extends Thread {
         return responsePacket;
     }
 
+    private ResponsePacket parseResponseAllThreads(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        int amountOfThreads = getIntFromData(result);
+        for (int i = 0; i < amountOfThreads; i++) {
+            long threadId = getLongFromData(result);
+            responsePacket.addActiveThread(threadId);
+        }
+        return responsePacket;
+    }
+
     private ResponsePacket parseResponseClassInfo(byte[] result) {
         ResponsePacket responsePacket = new ResponsePacket();
         int amountOfMatchingClasses = getIntFromData(result);
@@ -326,8 +339,6 @@ public class ResponseProcessor extends Thread {
         event.setSignature(signature);
 
         event.setStatus(getIntFromData(result));
-        classId = event.getRefTypeId();
-        threadId = event.getThread();
         return event;
     }
 
@@ -338,7 +349,7 @@ public class ResponseProcessor extends Thread {
                 EventType.BREAKPOINT_HIT : EventType.STEP_HIT);
         int requestId = getIntFromData(result);
         if (eventKind == EVENT_KIND_SINGLE_STEP)
-            stepOverRequest = requestId;
+            stepOverRequests.add(requestId); // todo write docs to this because it's not possible to comprehend!
         event.setRequestID(requestId);
         long threadId = getLongFromData(result);
         event.setThread(threadId);

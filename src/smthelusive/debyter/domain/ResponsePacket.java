@@ -21,7 +21,8 @@ public class ResponsePacket {
     private LineTable lineTable;
 
     private VariableTable variableTable;
-    private List<GenericVariable> genericVariables = new ArrayList<>();
+    private final List<GenericVariable> genericVariables = new ArrayList<>();
+    private final List<Long> activeThreads = new ArrayList<>();
 
     private int fieldIDSize;
     private int methodIDSize;
@@ -35,6 +36,14 @@ public class ResponsePacket {
     private Location location;
 
     private String stringValue;
+
+    public List<Long> getActiveThreads() {
+        return activeThreads;
+    }
+
+    public void addActiveThread(long threadId) {
+        activeThreads.add(threadId);
+    }
 
     public String getStringValue() {
         return stringValue;

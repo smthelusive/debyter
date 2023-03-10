@@ -18,4 +18,5 @@ public class ResponseType {
     public static final int RESPONSE_TYPE_ID_SIZES = 11;
     public static final int RESPONSE_TYPE_BYTECODES = 12;
     public static final int RESPONSE_TYPE_STRING_VALUE = 13;
+    public static final int RESPONSE_TYPE_ALL_THREADS = 14;
 }

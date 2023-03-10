@@ -1,5 +1,7 @@
 package smthelusive.debyter.domain;
 
+import smthelusive.debyter.Utils;
+
 import java.util.*;
 
 public class CurrentState {
@@ -7,9 +9,23 @@ public class CurrentState {
     private byte[] bytecodes;
     private VariableTable variableTable;
     private long threadId;
-    private Map<Long, Set<AMethod>> methodsByClassId = new HashMap<>();
+
+    private List<Long> activeThreads = new ArrayList<>();
+    private final Map<Long, Set<AMethod>> methodsByClassId = new HashMap<>();
 
     private List<AClass> classes = new ArrayList<>();
+
+    public List<Long> getActiveThreads() {
+        return activeThreads;
+    }
+
+    public void addActiveThread(long threadId) {
+        this.activeThreads.add(threadId);
+    }
+
+    public void setActiveThreads(List<Long> activeThreads) {
+        this.activeThreads = activeThreads;
+    }
 
     public List<AClass> getClasses() {
         return classes;
@@ -25,8 +41,8 @@ public class CurrentState {
 
     public Long getClassIdByName(String className) {
         return classes.stream()
-                .filter(aClass -> aClass.signature().equals(className))
-                .map(AClass::refTypeTag)
+                .filter(aClass -> aClass.signature().equals(Utils.getInternalRepresentationOfObjectType(className)))
+                .map(AClass::typeID)
                 .findAny()
                 .orElse(0L);
     }
@@ -37,9 +53,15 @@ public class CurrentState {
     }
 
     public boolean classMethodInfoAvailable(String className, String methodName) {
-        return classes.stream().filter(aClass -> aClass.signature().equals(className)).flatMap(aClass ->
-                methodsByClassId.get(aClass.refTypeTag()).stream().filter(method -> method.name().equals(methodName)))
-                .findAny().isPresent();
+        return classes.stream().filter(aClass ->
+                        aClass.signature().equals(Utils.getInternalRepresentationOfObjectType(className)))
+                .flatMap(aClass -> Optional.ofNullable(methodsByClassId.get(aClass.typeID())).stream())
+                .flatMap(Collection::stream)
+                .anyMatch(method -> method.name().equals(methodName));
+    }
+
+    public boolean classInfoAvailable(String className) {
+        return classes.stream().anyMatch(aClass -> aClass.signature().equals(Utils.getInternalRepresentationOfObjectType(className)));
     }
 
 
