@@ -45,8 +45,16 @@ public class Debyter implements ResponseListener, UserInputListener {
         deferredBreakpoints.add(new DeferredBreakpoint(className, methodName, codeIndex));
     }
 
-    public static void main(String[] args) {
-        startConnection(LOCALHOST, PORT);
+    public static void main(String[] args) throws Exception {
+        if (args.length != 1) {
+            logger.info("no address specified, connecting to default address: {}:{}", LOCALHOST, PORT);
+            startConnection(LOCALHOST, PORT);
+        } else {
+            String[] address = args[0].split(":");
+            if (address.length != 2)
+                throw new Exception("invalid address, please specify address in format {host}:{port}");
+            startConnection(address[0], Integer.parseInt(address[1]));
+        }
         jdwpHandshake();
         Debyter debyter = new Debyter();
         userInputProcessor = new UserInputProcessor();
