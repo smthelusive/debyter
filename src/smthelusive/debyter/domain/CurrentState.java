@@ -9,6 +9,7 @@ public class CurrentState {
     private byte[] bytecodes;
     private VariableTable variableTable;
     private long threadId;
+    private long frameId = -1;
 
     private List<Long> activeThreads = new ArrayList<>();
     private final Map<Long, Set<AMethod>> methodsByClassId = new HashMap<>();
@@ -21,6 +22,14 @@ public class CurrentState {
 
     public void addActiveThread(long threadId) {
         this.activeThreads.add(threadId);
+    }
+
+    public long getFrameId() {
+        return frameId;
+    }
+
+    public void setFrameId(long frameId) {
+        this.frameId = frameId;
     }
 
     public void setActiveThreads(List<Long> activeThreads) {

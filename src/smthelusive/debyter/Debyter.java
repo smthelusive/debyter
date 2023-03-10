@@ -11,8 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 
 import static smthelusive.debyter.constants.Command.*;
@@ -32,6 +30,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static ResponseProcessor responseProcessor;
     private static UserInputProcessor userInputProcessor;
     private static boolean keepProcessing = true;
+    private static boolean sameEventBatch = false;
     private static final Logger logger = LoggerFactory.getLogger(Debyter.class);
     private static int id = 0;
     private static final HashSet<DeferredBreakpoint> deferredBreakpoints = new HashSet<>();
@@ -86,11 +85,13 @@ public class Debyter implements ResponseListener, UserInputListener {
         batch.forEach(responsePacket -> {
             switch (responsePacket.getResponseType()) {
                 case RESPONSE_TYPE_COMPOSITE_EVENT -> {
+                    sameEventBatch = false;
                     responsePacket.getEventsList().forEach(Debyter::processEvent);
                 }
                 case RESPONSE_TYPE_FRAME_INFO -> {
                     logCurrentLocation();
-                    requestLocalVariables(responsePacket.getFrameId());
+                    currentState.setFrameId(responsePacket.getFrameId());
+                    requestLocalVariables(currentState.getFrameId());
                 }
                 case RESPONSE_TYPE_BYTECODES -> currentState.setBytecodes(responsePacket.getBytecodes());
                 case RESPONSE_TYPE_VARIABLETABLE -> currentState.setVariableTable(responsePacket.getVariableTable());
@@ -190,13 +191,6 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
-//    private static void requestClassDataBySignature(String signature) {
-//        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, CLASSES_BY_SIGNATURE_CMD);
-//        packet.addDataAsInt(signature.getBytes().length);
-//        packet.addDataAsBytes(signature.getBytes());
-//        sendPacket(packet, RESPONSE_TYPE_CLASS_INFO);
-//    }
-
     private static void requestClassPrepareEvent(String className) {
         Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
         packet.addDataAsByte(EVENT_KIND_CLASS_PREPARE);
@@ -207,7 +201,6 @@ public class Debyter implements ResponseListener, UserInputListener {
         packet.addDataAsInt(classNameBytes.length);
         packet.addDataAsBytes(classNameBytes);
         sendPacket(packet, RESPONSE_TYPE_COMPOSITE_EVENT);
-
     }
 
     private static void startConnection(String ip, int port) {
@@ -429,9 +422,14 @@ public class Debyter implements ResponseListener, UserInputListener {
             requestByteCodes(classId, methodId);
             requestVariableTableInfo(classId, methodId);
         }
-        currentState.setLocation(location);
+        currentState.setLocation(location); // can be different code index
         currentState.setThreadId(threadId);
-        requestCurrentFrameInfo(threadId);
+        if (currentState.getFrameId() == -1 ||
+                (!sameEventBatch || currentState.getLocation().stream()
+                        .noneMatch(currentLocation -> currentLocation.equals(location)))) {
+            sameEventBatch = true; // to avoid logging hit info twice
+            requestCurrentFrameInfo(threadId); // this flow will proceed to request/log all hit info
+        }
     }
 
     private static void logCurrentOperation() {
@@ -474,7 +472,19 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case Type.ARRAY -> logger.info("array, reference: " + variable.value());
                 case Type.STRING -> requestStringValue(variable.value());
                 case Type.OBJECT -> logger.info("object, reference: " + variable.value());
-                default -> logger.error("something unexpected received");
+                case Type.BOOLEAN -> logger.info("boolean: " + variable.value());
+                case Type.BYTE -> logger.info("byte: " + variable.value());
+                case Type.CHAR -> logger.info("char: " + variable.value());
+                case Type.FLOAT -> logger.info("float: " + variable.value());
+                case Type.DOUBLE -> logger.info("double: " + variable.value());
+                case Type.SHORT -> logger.info("short: " + variable.value());
+                case Type.THREAD -> logger.info("thread: " + variable.value());
+                case Type.THREAD_GROUP -> logger.info("thread group: " + variable.value());
+                case Type.CLASS_LOADER -> logger.info("class loader: " + variable.value());
+                case Type.CLASS_OBJECT -> logger.info("class object: " + variable.value());
+                case Type.VOID -> logger.info("void: " + variable.value());
+                case Type.LONG -> logger.info("long: " + variable.value());
+                default -> logger.error("something unexpected received: " + variable.value());
             }
         }
     }
