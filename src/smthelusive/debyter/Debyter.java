@@ -341,7 +341,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     /*
-        this returns info to be able to map bytecode operation indices to java code line numbers
+        returns info to be able to map bytecode operation indices to java code line numbers
      */
     private static void requestLineTableInfo(long classId, long methodId) {
         requestTableInfo(classId, methodId, LINETABLE_CMD);
