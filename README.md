@@ -33,7 +33,7 @@ following can be executed (from inside `src` directory):
 
 Result will look like this:
 
-```aidl
+```text
 Compiled from "TheDebuggee.java"
 public class smthelusive.debyter.TheDebuggee {
   public smthelusive.debyter.TheDebuggee();
