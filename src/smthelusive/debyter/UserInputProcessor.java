@@ -28,35 +28,44 @@ public class UserInputProcessor extends Thread {
         while (processingOn) {
             String[] command = sc.nextLine().split("\\s");
             switch (command[0]) {
-                case "bp":
+                case "bp", "breakpoint":
                     if (command.length < 4) {
                         logger.error("please specify class, method and code index to set a breakpoint");
                     } else {
                         userInputListeners.forEach(userInputListener ->
-                                userInputListener.addEventToTheQueue(new UserCommand(UserCommandType.BREAKPOINT,
+                                userInputListener.newUserCommandReceived(new UserCommand(UserCommandType.BREAKPOINT,
                                         new String[]{command[1], command[2], command[3]})));
                     }
                     break;
                 case "step":
-                    logger.info("step over...");
-                    userInputListeners.forEach(userInputListener ->
-                            userInputListener.addEventToTheQueue(new UserCommand(UserCommandType.STEP_OVER, new String[0])));
-                case "resume":
-                    logger.info("resuming...");
-                    userInputListeners.forEach(userInputListener ->
-                            userInputListener.addEventToTheQueue(new UserCommand(UserCommandType.RESUME, new String[0])));
+                    logger.info("step over");
+                    notifyListenersOfSimpleUserCommandNoParams(UserCommandType.STEP_OVER);
+                case "resume", "run":
+                    logger.info("resuming");
+                    notifyListenersOfSimpleUserCommandNoParams(UserCommandType.RESUME);
                     break;
                 case "exit":
-                    logger.info("exiting...");
-                    userInputListeners.forEach(userInputListener ->
-                        userInputListener.addEventToTheQueue(new UserCommand(UserCommandType.EXIT, new String[0])));
+                    logger.info("exiting debugger. the debuggee application will continue execution");
+                    notifyListenersOfSimpleUserCommandNoParams(UserCommandType.EXIT);
                     break;
                 case "clear":
-                    logger.info("clearing breakpoints...");
-                    userInputListeners.forEach(userInputListener ->
-                            userInputListener.addEventToTheQueue(new UserCommand(UserCommandType.CLEAR, new String[0])));
+                    logger.info("clearing breakpoints");
+                    notifyListenersOfSimpleUserCommandNoParams(UserCommandType.CLEAR);
+                    break;
+                case "stop", "terminate":
+                    logger.info("terminating the debuggee app");
+                    notifyListenersOfSimpleUserCommandNoParams(UserCommandType.STOP_APP);
+                    break;
+                case "suspend", "pause":
+                    logger.info("suspending execution of the debuggee app");
+                    notifyListenersOfSimpleUserCommandNoParams(UserCommandType.SUSPEND);
                     break;
             }
         }
+    }
+
+    private void notifyListenersOfSimpleUserCommandNoParams(UserCommandType type) {
+        userInputListeners.forEach(userInputListener ->
+                userInputListener.newUserCommandReceived(new UserCommand(type, new String[0])));
     }
 }

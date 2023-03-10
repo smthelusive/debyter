@@ -153,7 +153,7 @@ public class ResponseProcessor extends Thread {
         for (int i = 0; i < amountOfValues; i++) {
             byte type = result[lastPos];
             lastPos++;
-            long value = type == Type.INT ? getIntFromData(result) : getLongFromData(result);
+            long value = type == Type.INT ? getIntFromData(result) : getLongFromData(result); // todo parse more types
             GenericVariable genericVariable = new GenericVariable(type, value);
             responsePacket.addVariable(genericVariable);
         }

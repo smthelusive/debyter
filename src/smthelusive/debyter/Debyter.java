@@ -83,6 +83,8 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case CLEAR -> userRequestClearBreakpoints();
                 case RESUME -> requestResume();
                 case EXIT -> requestExit();
+                case STOP_APP -> requestStopApp();
+                case SUSPEND -> requestSuspend();
             }
         }
     }
@@ -115,7 +117,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                 }
                 case RESPONSE_TYPE_ALL_THREADS ->
                         currentState.setActiveThreads(responsePacket.getActiveThreads());
-                case RESPONSE_TYPE_STRING_VALUE -> logger.info("String, value: " + responsePacket.getStringValue());
+                case RESPONSE_TYPE_STRING_VALUE -> logger.info("String, value: {}", responsePacket.getStringValue());
             }
         });
     }
@@ -130,7 +132,7 @@ public class Debyter implements ResponseListener, UserInputListener {
             }
             case STEP_HIT -> {
                 cleanupAllActiveStepOverRequests();
-                logger.info("STEP OVER HIT line #" + event.getLocation().codeIndex());
+                logger.info("STEP OVER HIT line #" + event.getLocation().codeIndex()); // todo sometimes this appears twice
                 processHitLocation(event.getThread(), event.getLocation());
             }
             case CLASS_LOADED -> {
@@ -151,8 +153,8 @@ public class Debyter implements ResponseListener, UserInputListener {
      */
     private static void cleanupAllActiveStepOverRequests() {
         if (!responseProcessor.getStepOverRegisteredRequests().isEmpty()) {
-            // saving to a separate list because in the meantime some more requests might get registered todo check if that's still the case
-            ArrayList<Integer> requestsToClean = new ArrayList<>(responseProcessor.getStepOverRegisteredRequests());
+            // saving to a separate list because in the meantime some more requests might get registered
+            Set<Integer> requestsToClean = new HashSet<>(responseProcessor.getStepOverRegisteredRequests());
             responseProcessor.resetStepOverRequests();
             for (Integer requestId : requestsToClean) {
                 requestClearEvent(EVENT_KIND_SINGLE_STEP, requestId);
@@ -360,11 +362,13 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void requestExit() {
-        int exitCode = EXIT_CODE_OK;
+        System.exit(EXIT_CODE_OK);
+    }
+
+    private static void requestStopApp() {
         Packet packet = new Packet(id, EMPTY_FLAGS, VIRTUAL_MACHINE_COMMAND_SET, EXIT_CMD);
-        packet.addDataAsInt(exitCode);
+        packet.addDataAsInt(EXIT_CODE_OK);
         sendPacket(packet, EXIT_CMD);
-        System.exit(exitCode);
     }
 
     private static void userRequestClearBreakpoints() {
@@ -490,22 +494,22 @@ public class Debyter implements ResponseListener, UserInputListener {
         logger.info("LOCAL VARIABLES:");
         for (GenericVariable variable: variables) {
             switch (variable.type()) {
-                case Type.INT -> logger.info("int, value: " + variable.value());
-                case Type.ARRAY -> logger.info("array, reference: " + variable.value());
+                case Type.INT -> logger.info("int, value: {}", variable.value());
+                case Type.ARRAY -> logger.info("array, reference: {}", variable.value());
                 case Type.STRING -> requestStringValue(variable.value());
-                case Type.OBJECT -> logger.info("object, reference: " + variable.value());
-                case Type.BOOLEAN -> logger.info("boolean: " + variable.value());
-                case Type.BYTE -> logger.info("byte: " + variable.value());
-                case Type.CHAR -> logger.info("char: " + variable.value());
-                case Type.FLOAT -> logger.info("float: " + variable.value());
-                case Type.DOUBLE -> logger.info("double: " + variable.value());
-                case Type.SHORT -> logger.info("short: " + variable.value());
-                case Type.THREAD -> logger.info("thread: " + variable.value());
-                case Type.THREAD_GROUP -> logger.info("thread group: " + variable.value());
-                case Type.CLASS_LOADER -> logger.info("class loader: " + variable.value());
-                case Type.CLASS_OBJECT -> logger.info("class object: " + variable.value());
-                case Type.VOID -> logger.info("void: " + variable.value());
-                case Type.LONG -> logger.info("long: " + variable.value());
+                case Type.OBJECT -> logger.info("object, reference: {}", variable.value());
+                case Type.BOOLEAN -> logger.info("boolean: {}", variable.value());
+                case Type.BYTE -> logger.info("byte: {}", variable.value());
+                case Type.CHAR -> logger.info("char: {}", variable.value());
+                case Type.FLOAT -> logger.info("float: {}", variable.value());
+                case Type.DOUBLE -> logger.info("double: {}", variable.value());
+                case Type.SHORT -> logger.info("short: {}", variable.value());
+                case Type.THREAD -> logger.info("thread: {}", variable.value());
+                case Type.THREAD_GROUP -> logger.info("thread group: {}", variable.value());
+                case Type.CLASS_LOADER -> logger.info("class loader: {}", variable.value());
+                case Type.CLASS_OBJECT -> logger.info("class object: {}", variable.value());
+                case Type.VOID -> logger.info("void: {}", variable.value());
+                case Type.LONG -> logger.info("long: {}", variable.value());
                 default -> logger.error("something unexpected received: " + variable.value());
             }
         }
@@ -517,7 +521,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     @Override
-    public void addEventToTheQueue(UserCommand userCommand) {
+    public void newUserCommandReceived(UserCommand userCommand) {
         userCommands.add(userCommand);
     }
 }

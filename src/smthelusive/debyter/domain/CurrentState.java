@@ -6,8 +6,8 @@ import java.util.*;
 
 public class CurrentState {
     private Location location;
-    private byte[] bytecodes;
-    private VariableTable variableTable;
+    private byte[] bytecodes; // todo save this in the map with method ids so no need to request if this is already available
+    private VariableTable variableTable; // todo save this in the map with method ids so no need to request if this is already available
     private long threadId;
     private long frameId = -1;
 
