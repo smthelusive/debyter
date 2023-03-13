@@ -11,6 +11,25 @@ public class CurrentState {
     private long threadId;
     private long frameId = -1;
 
+    private long arrayID = -1;
+    private byte arrayType;
+
+    public byte getArrayType() {
+        return arrayType;
+    }
+
+    public void setArrayType(byte arrayType) {
+        this.arrayType = arrayType;
+    }
+
+    public long getArrayID() {
+        return arrayID;
+    }
+
+    public void setArrayID(long arrayID) {
+        this.arrayID = arrayID;
+    }
+
     private List<Long> activeThreads = new ArrayList<>();
     private final Map<Long, Set<AMethod>> methodsByClassId = new HashMap<>();
 

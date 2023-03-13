@@ -55,13 +55,17 @@ public class Command {
     // Command set 11:
     public static final int FRAMES = 6;
 
+    // Command set 13:
+    public static final int LENGTH = 1;
+    public static final int GET_ARRAY_VALUES = 2;
+
     // Commands set 15:
     public static final int SET_CMD = 1;
     public static final int CLEAR_CMD = 2;
     public static final int CLEAR_ALL_BREAKPOINTS_CMD = 3;
 
     // Commands set 16:
-    public static final int GET_VALUES = 1;
+    public static final int GET_VARIABLE_VALUES = 1;
 
     // Commands set 64:
     public static final int COMPOSITE_EVENT_CMD = 100;

@@ -37,6 +37,16 @@ public class ResponsePacket {
 
     private String stringValue;
 
+    private int arrayLength;
+
+    public int getArrayLength() {
+        return arrayLength;
+    }
+
+    public void setArrayLength(int arrayLength) {
+        this.arrayLength = arrayLength;
+    }
+
     public List<Long> getActiveThreads() {
         return activeThreads;
     }

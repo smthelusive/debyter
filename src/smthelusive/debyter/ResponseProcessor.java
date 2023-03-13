@@ -29,7 +29,21 @@ public class ResponseProcessor extends Thread {
 
     private final Set<Integer> stepOverRegisteredRequests = new HashSet<>();
 
+    private final Map<Integer, Integer> arrayRequests = new HashMap<>(); // request -> array index
+
     private final ArrayList<ResponseListener> responseListeners = new ArrayList<>();
+
+    public Map<Integer, Integer> getArrayRequests() {
+        return arrayRequests;
+    }
+
+    public void resetArrayRequests() {
+        this.arrayRequests.clear();
+    }
+
+    public void addArrayRequest(int requestId, int index) {
+        this.arrayRequests.put(requestId, index);
+    }
 
     public void addStepOverRequest(int request) {
         stepOverRequests.add(request);
@@ -123,6 +137,8 @@ public class ResponseProcessor extends Thread {
                 case RESPONSE_TYPE_LOCAL_VARIABLES -> responsePacket = parseResponseVariables(result);
                 case RESPONSE_TYPE_BYTECODES -> responsePacket = parseResponseBytecodes(result);
                 case RESPONSE_TYPE_STRING_VALUE -> responsePacket = parseResponseStringValue(result);
+                case RESPONSE_TYPE_ARRAY_LENGTH -> responsePacket = parseResponseArrayLength(result);
+                case RESPONSE_TYPE_ARRAY_VALUES -> responsePacket = parseResponseArrayValues(result);
                 default -> {}
             }
         }
@@ -160,10 +176,35 @@ public class ResponseProcessor extends Thread {
         return responsePacket;
     }
 
+    private ResponsePacket parseResponseArrayValues(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        byte type = result[lastPos];
+        byte objectType = -1;
+        lastPos++;
+        int amountOfValues = getIntFromData(result);
+        for (int i = 0; i < amountOfValues; i++) {
+            if (type == Type.OBJECT) {
+                objectType = result[lastPos];
+                lastPos++;
+            }
+            long value = type == Type.INT ? getIntFromData(result) : getLongFromData(result);
+            GenericVariable genericVariable = new GenericVariable(type == Type.OBJECT ? objectType : type, value);
+            responsePacket.addVariable(genericVariable);
+        }
+        return responsePacket;
+    }
+
     private ResponsePacket parseResponseStringValue(byte[] result) {
         ResponsePacket responsePacket = new ResponsePacket();
         String value = getStringFromData(result);
         responsePacket.setStringValue(value);
+        return responsePacket;
+    }
+
+    private ResponsePacket parseResponseArrayLength(byte[] result) {
+        ResponsePacket responsePacket = new ResponsePacket();
+        int value = getIntFromData(result);
+        responsePacket.setArrayLength(value);
         return responsePacket;
     }
 

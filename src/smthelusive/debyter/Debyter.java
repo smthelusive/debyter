@@ -35,6 +35,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static int id = 0;
     private static final HashSet<DeferredBreakpoint> deferredBreakpoints = new HashSet<>();
 
+
     private static int getNewUniqueId() {
         return id++;
     }
@@ -106,7 +107,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case RESPONSE_TYPE_BYTECODES -> currentState.setBytecodes(responsePacket.getBytecodes());
                 case RESPONSE_TYPE_VARIABLETABLE -> currentState.setVariableTable(responsePacket.getVariableTable());
                 case RESPONSE_TYPE_LINETABLE -> logger.info("Linetable received: " + responsePacket.getLineTable());
-                case RESPONSE_TYPE_LOCAL_VARIABLES -> logLocalVariables(responsePacket.getGenericVariables());
+                case RESPONSE_TYPE_LOCAL_VARIABLES -> logLocalVariables(responsePacket.getGenericVariables(), false);
                 case RESPONSE_TYPE_CLASS_INFO -> {}
                 case RESPONSE_TYPE_ALL_CLASSES -> currentState.setClasses(responsePacket.getClasses());
                 case RESPONSE_TYPE_EVENT_REQUEST -> {}
@@ -117,7 +118,16 @@ public class Debyter implements ResponseListener, UserInputListener {
                 }
                 case RESPONSE_TYPE_ALL_THREADS ->
                         currentState.setActiveThreads(responsePacket.getActiveThreads());
-                case RESPONSE_TYPE_STRING_VALUE -> logger.info("String, value: {}", responsePacket.getStringValue());
+                case RESPONSE_TYPE_STRING_VALUE -> { // todo filling of arrayrequests
+                    Integer index = responseProcessor.getArrayRequests().get(responsePacket.getId());
+                    if (index != null) {
+                        logger.info("array String [{}], value: {}", index, responsePacket.getStringValue());
+                    } else {
+                        logger.info("String, value: {}", responsePacket.getStringValue());
+                    }
+                }
+                case RESPONSE_TYPE_ARRAY_LENGTH -> requestArrayValues(currentState.getArrayID(), responsePacket.getArrayLength());
+                case RESPONSE_TYPE_ARRAY_VALUES -> logLocalVariables(responsePacket.getGenericVariables(), true);
             }
         });
     }
@@ -196,11 +206,21 @@ public class Debyter implements ResponseListener, UserInputListener {
                 ), RESPONSE_TYPE_ALL_THREADS);
     }
 
-    private static void requestStringValue(long stringId) {
+    private static void requestStringValue(long stringId, boolean ofArray, int index) {
         int id = getNewUniqueId();
+        if (ofArray) responseProcessor.addArrayRequest(id, index);
         Packet packet = new Packet(id, EMPTY_FLAGS, STRING_REFERENCE_COMMAND_SET, STRING_VALUE_CMD);
         packet.addDataAsLong(stringId);
         sendPacket(packet, RESPONSE_TYPE_STRING_VALUE);
+    }
+
+    private static void requestArrayInfo(long arrayID, boolean ofArray, int index) {
+        int id = getNewUniqueId();
+        if (ofArray) responseProcessor.addArrayRequest(id, index);
+        currentState.setArrayID(arrayID);
+        Packet packet = new Packet(id, EMPTY_FLAGS, ARRAY_REFERENCE_COMMAND_SET, LENGTH);
+        packet.addDataAsLong(arrayID);
+        sendPacket(packet, RESPONSE_TYPE_ARRAY_LENGTH);
     }
 
     private static void sendPacket(Packet packet, int responseType) {
@@ -467,7 +487,16 @@ public class Debyter implements ResponseListener, UserInputListener {
                                         "unknown"))));
     }
 
+    private static void requestArrayValues(long arrayId, int length) {
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, ARRAY_REFERENCE_COMMAND_SET, GET_ARRAY_VALUES);
+        packet.addDataAsLong(arrayId);
+        packet.addDataAsInt(0);
+        packet.addDataAsInt(length);
+        sendPacket(packet, RESPONSE_TYPE_ARRAY_VALUES);
+    }
+
     private static void requestLocalVariables(long frameId) {
+        responseProcessor.resetArrayRequests();
         currentState.getLocation().map(Location::codeIndex).flatMap(codeIndex ->
             currentState.getVariableTable().map(variableTable ->
                 variableTable.getVariables().stream()
@@ -476,7 +505,7 @@ public class Debyter implements ResponseListener, UserInputListener {
             )
         ).ifPresent(visibleVariables -> {
                     if (visibleVariables.size() > 0) {
-                        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, STACK_FRAME_COMMAND_SET, GET_VALUES);
+                        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, STACK_FRAME_COMMAND_SET, GET_VARIABLE_VALUES);
                         packet.addDataAsLong(currentState.getThreadId());
                         packet.addDataAsLong(frameId);
                         packet.addDataAsInt(visibleVariables.size()); // amount of variables
@@ -490,28 +519,50 @@ public class Debyter implements ResponseListener, UserInputListener {
         );
     }
 
-    private static void logLocalVariables(List<GenericVariable> variables) {
-        logger.info("LOCAL VARIABLES:");
+    private static void logLocalVariables(List<GenericVariable> variables, boolean ofArray) {
+        if (ofArray && !variables.isEmpty()) {
+            logger.info("ARRAY VALUES:");
+        } else if (!ofArray) {
+            logger.info("LOCAL VARIABLES:");
+        }
+        int i = 0;
         for (GenericVariable variable: variables) {
-            switch (variable.type()) {
-                case Type.INT -> logger.info("int, value: {}", variable.value());
-                case Type.ARRAY -> logger.info("array, reference: {}", variable.value());
-                case Type.STRING -> requestStringValue(variable.value());
-                case Type.OBJECT -> logger.info("object, reference: {}", variable.value());
-                case Type.BOOLEAN -> logger.info("boolean: {}", variable.value());
-                case Type.BYTE -> logger.info("byte: {}", variable.value());
-                case Type.CHAR -> logger.info("char: {}", variable.value());
-                case Type.FLOAT -> logger.info("float: {}", variable.value());
-                case Type.DOUBLE -> logger.info("double: {}", variable.value());
-                case Type.SHORT -> logger.info("short: {}", variable.value());
-                case Type.THREAD -> logger.info("thread: {}", variable.value());
-                case Type.THREAD_GROUP -> logger.info("thread group: {}", variable.value());
-                case Type.CLASS_LOADER -> logger.info("class loader: {}", variable.value());
-                case Type.CLASS_OBJECT -> logger.info("class object: {}", variable.value());
-                case Type.VOID -> logger.info("void: {}", variable.value());
-                case Type.LONG -> logger.info("long: {}", variable.value());
-                default -> logger.error("something unexpected received: " + variable.value());
-            }
+            logGenericVariable(variable, ofArray, i);
+            i++;
+        }
+    }
+
+    private static void logGenericVariable(GenericVariable variable, boolean ofArray, int i) {
+        switch (variable.type()) {
+            case Type.INT -> logValue(variable.value(), "int", ofArray, i);
+            case Type.ARRAY -> requestArrayInfo(variable.value(), ofArray, i);
+            case Type.STRING -> requestStringValue(variable.value(), ofArray, i);
+            case Type.OBJECT -> logValue(variable.value(), "object reference", ofArray, i);
+            case Type.BOOLEAN -> logValue(variable.value(), "boolean", ofArray, i);
+            case Type.BYTE -> logValue(variable.value(), "byte", ofArray, i);
+            case Type.CHAR -> logValue(variable.value(), "char", ofArray, i);
+            case Type.FLOAT -> logValue(variable.value(), "float", ofArray, i);
+            case Type.DOUBLE -> logValue(variable.value(), "double", ofArray, i);
+            case Type.SHORT -> logValue(variable.value(), "short", ofArray, i);
+            case Type.THREAD -> logValue(variable.value(), "thread", ofArray, i);
+            case Type.THREAD_GROUP -> logValue(variable.value(), "thread group", ofArray, i);
+            case Type.CLASS_LOADER -> logValue(variable.value(), "class loader", ofArray, i);
+            case Type.CLASS_OBJECT -> logValue(variable.value(), "class object", ofArray, i);
+            case Type.VOID -> logValue(variable.value(), "void", ofArray, i);
+            case Type.LONG -> logValue(variable.value(), "long", ofArray, i);
+            default -> logger.error("something unexpected received: " + variable.value());
+        }
+    }
+
+    private static void requestObjectByReference(GenericVariable variable) {
+
+    }
+
+    private static void logValue(long value, String type, boolean ofArray, int index) {
+        if (ofArray) {
+            logger.info("array {} [{}], value: {}", type, index, value);
+        } else {
+            logger.info("{}, value: {}", type, value);
         }
     }
 
