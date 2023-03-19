@@ -11,12 +11,12 @@ public class TheDebuggee {
         System.out.println(test + " hello");
     }
 }
-// java -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:8000 smthelusive/debyter/TheDebuggee
+// java -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:8000 smthelusive/debyter/examples/TheDebuggee
 // -Xlog:class+load=info:log.txt
 /*
     Compiled from "TheDebuggee.java"
-public class smthelusive.debyter.TheDebuggee {a   TheDebuggee.java         UserInputProcessor.java  WIP.class                domain/
-public smthelusive.debyter.TheDebuggee();
+public class smthelusive.debyter.examples.TheDebuggee {a   TheDebuggee.java         UserInputProcessor.java  WIP.class                domain/
+public smthelusive.debyter.examples.TheDebuggee();
         Code:
         0: aload_0
         1: invokespecial #1                  // Method java/lang/Object."<init>":()V

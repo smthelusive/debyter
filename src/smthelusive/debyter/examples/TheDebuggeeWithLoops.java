@@ -14,8 +14,8 @@ public class TheDebuggeeWithLoops {
 
 /*
 Compiled from "TheDebuggeeWithLoops.java"
-public class smthelusive.debyter.TheDebuggeeWithLoops {
-  public smthelusive.debyter.TheDebuggeeWithLoops();
+public class smthelusive.debyter.examples.TheDebuggeeWithLoops {
+  public smthelusive.debyter.examples.TheDebuggeeWithLoops();
     Code:
        0: aload_0
        1: invokespecial #1                  // Method java/lang/Object."<init>":()V

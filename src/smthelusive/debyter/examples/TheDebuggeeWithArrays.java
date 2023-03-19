@@ -22,8 +22,8 @@ public class TheDebuggeeWithArrays {
 }
 /*
 Compiled from "TheDebuggeeWithArrays.java"
-public class smthelusive.debyter.TheDebuggeeWithArrays {
-  public smthelusive.debyter.TheDebuggeeWithArrays();
+public class smthelusive.debyter.examples.TheDebuggeeWithArrays {
+  public smthelusive.debyter.examples.TheDebuggeeWithArrays();
     Code:
        0: aload_0
        1: invokespecial #1                  // Method java/lang/Object."<init>":()V
