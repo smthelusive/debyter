@@ -1,4 +1,4 @@
-package smthelusive.debyter;
+package smthelusive.debyter.examples;
 
 public class TheDebuggeeInfiniteLoop {
     public static void main(String[] args) {

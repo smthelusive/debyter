@@ -1,4 +1,4 @@
-package smthelusive.debyter;
+package smthelusive.debyter.examples;
 
 import java.util.Arrays;
 
