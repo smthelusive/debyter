@@ -12,15 +12,6 @@ public class CurrentState {
     private long frameId = -1;
 
     private long arrayID = -1;
-    private byte arrayType;
-
-    public byte getArrayType() {
-        return arrayType;
-    }
-
-    public void setArrayType(byte arrayType) {
-        this.arrayType = arrayType;
-    }
 
     public long getArrayID() {
         return arrayID;

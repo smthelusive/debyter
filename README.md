@@ -5,9 +5,9 @@ The JVM with debuggee application should be started.
 It can be both suspended or not, the classes don't have to be loaded right away. 
 Examples of starting the JVM (the specified compiled class is present as example in this project):
 
-`java -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:8000 smthelusive/debyter/TheDebuggee`
+`java -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:8000 smthelusive/debyter/examples/TheDebuggee`
 
-`java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:8000 smthelusive/debyter/TheDebuggee`
+`java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:8000 smthelusive/debyter/examples/TheDebuggee`
 
 The Debyter accepts address as input parameter in the following format:
 `{host}:{port}`, example: `127.0.0.1:8000`.\
@@ -16,12 +16,12 @@ The above is also a default address in case no other address is provided.
 ### Set the breakpoint
 In order to set the breakpoint, type the following command:
 
-`bp smthelusive.debyter.TheDebuggee main 15` 
+`bp smthelusive.debyter.examples.TheDebuggee main 15` 
 
 where: 
 
 - `bp` is the name of the command, meaning "breakpoint";
-- `smthelusive.debyter.TheDebuggee` is the fully qualified class name;
+- `smthelusive.debyter.examples.TheDebuggee` is the fully qualified class name;
 - `main` is the method name;
 - `15` is the code index.
 
@@ -29,14 +29,14 @@ To know which code index to use, use `javap` tool
 that shows the bytecode in human-readable format. For example above, the
 following can be executed (from inside `src` directory):
 
-`javap -c smthelusive/debyter/TheDebuggee`
+`javap -c smthelusive/debyter/examples/TheDebuggee`
 
 Result will look like this:
 
 ```text
 Compiled from "TheDebuggee.java"
-public class smthelusive.debyter.TheDebuggee {
-  public smthelusive.debyter.TheDebuggee();
+public class smthelusive.debyter.examples.TheDebuggee {
+  public smthelusive.debyter.examples.TheDebuggee();
     Code:
        0: aload_0
        1: invokespecial #1                  // Method java/lang/Object."<init>":()V

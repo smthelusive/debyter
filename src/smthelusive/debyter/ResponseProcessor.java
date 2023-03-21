@@ -22,6 +22,7 @@ public class ResponseProcessor extends Thread {
     private final InputStream inputStream;
     private boolean processingOn = true;
     private final Map<Integer, Integer> requestsSent = new HashMap<>();
+    private final Map<Integer, Integer> eventRequestsRegistered = new HashMap<>();
     private final Logger logger = LoggerFactory.getLogger(ResponseProcessor.class);
     private int lastPos;
 
@@ -53,6 +54,14 @@ public class ResponseProcessor extends Thread {
         requestsSent.put(id, expectedResponseType);
     }
 
+    public void eventRequestIsRegistered(int id, int registeredWithId) {
+        eventRequestsRegistered.put(id, registeredWithId);
+    }
+
+    public Optional<Integer> getRegisteredEventIdOfId(int id) {
+        return Optional.ofNullable(eventRequestsRegistered.get(id));
+    }
+
     public Set<Integer> getStepOverRegisteredRequests() {
         return stepOverRegisteredRequests;
     }
@@ -79,7 +88,7 @@ public class ResponseProcessor extends Thread {
         while (processingOn) {
             try {
                 byte[] intVal = inputStream.readNBytes(INTEGER_LENGTH_BYTES);
-                if (intVal.length < INTEGER_LENGTH_BYTES) continue; // don't know how but this happens
+                if (intVal.length < INTEGER_LENGTH_BYTES) continue; // todo don't know how but this happens
                 int replyLength = byteArrayToInteger(intVal);
                 int leftoverLengthToRead = replyLength - INTEGER_LENGTH_BYTES;
                 if (leftoverLengthToRead > 0) {
@@ -123,7 +132,7 @@ public class ResponseProcessor extends Thread {
                 case RESPONSE_TYPE_COMPOSITE_EVENT -> responsePacket = parseCompositeEvent(result);
                 case RESPONSE_TYPE_EVENT_REQUEST -> {
                     int requestId = getIntFromData(result);
-                    requestIsSent(idValue, requestId);
+                    eventRequestIsRegistered(idValue, requestId);
                     responsePacket.setId(requestId);
                     if (stepOverRequests.contains(idValue)) {
                         stepOverRequests.remove(idValue);
@@ -169,7 +178,7 @@ public class ResponseProcessor extends Thread {
         for (int i = 0; i < amountOfValues; i++) {
             byte type = result[lastPos];
             lastPos++;
-            long value = type == Type.INT ? getIntFromData(result) : getLongFromData(result); // todo parse more types
+            long value = type == Type.INT ? getIntFromData(result) : getLongFromData(result);
             GenericVariable genericVariable = new GenericVariable(type, value);
             responsePacket.addVariable(genericVariable);
         }

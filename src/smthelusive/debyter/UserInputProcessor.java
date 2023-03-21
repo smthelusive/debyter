@@ -37,6 +37,15 @@ public class UserInputProcessor extends Thread {
                                         new String[]{command[1], command[2], command[3]})));
                     }
                     break;
+                    case "rm", "remove":
+                    if (command.length < 4) {
+                        logger.error("please specify class, method and code index to remove a breakpoint");
+                    } else {
+                        userInputListeners.forEach(userInputListener ->
+                                userInputListener.newUserCommandReceived(new UserCommand(UserCommandType.REMOVE,
+                                        new String[]{command[1], command[2], command[3]})));
+                    }
+                    break;
                 case "step":
                     logger.info("step over");
                     notifyListenersOfSimpleUserCommandNoParams(UserCommandType.STEP_OVER);

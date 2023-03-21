@@ -34,6 +34,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static final Logger logger = LoggerFactory.getLogger(Debyter.class);
     private static int id = 0;
     private static final HashSet<DeferredBreakpoint> deferredBreakpoints = new HashSet<>();
+    private static final Set<BreakpointRequest> breakpointRequests = new HashSet<>();
 
 
     private static int getNewUniqueId() {
@@ -82,10 +83,21 @@ public class Debyter implements ResponseListener, UserInputListener {
                         Integer.parseInt(userCommand.params()[2]));
                 case STEP_OVER -> requestStepOverEvents();
                 case CLEAR -> userRequestClearBreakpoints();
-                case RESUME -> requestResume();
+                case RESUME -> {
+                    requestResume();
+                    // if deferred breakpoints are present, possibly class/method info wasn't yet received
+                    if (!deferredBreakpoints.isEmpty()) {
+                        requestAllThreads();
+                        requestAllClasses();
+                    }
+                }
                 case EXIT -> requestExit();
                 case STOP_APP -> requestStopApp();
                 case SUSPEND -> requestSuspend();
+                case REMOVE -> userRequestRemoveBreakpoint(
+                        userCommand.params()[0],
+                        userCommand.params()[1],
+                        Integer.parseInt(userCommand.params()[2]));
             }
         }
     }
@@ -109,16 +121,21 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case RESPONSE_TYPE_LINETABLE -> logger.info("Linetable received: " + responsePacket.getLineTable());
                 case RESPONSE_TYPE_LOCAL_VARIABLES -> logLocalVariables(responsePacket.getGenericVariables(), false);
                 case RESPONSE_TYPE_CLASS_INFO -> {}
-                case RESPONSE_TYPE_ALL_CLASSES -> currentState.setClasses(responsePacket.getClasses());
+                case RESPONSE_TYPE_ALL_CLASSES -> {
+                    currentState.setClasses(responsePacket.getClasses());
+                    // request method info for processing the deferred breakpoints if there are any:
+                    deferredBreakpoints.forEach(deferredBreakpoint ->
+                        requestMethodsOfClassInfo(currentState.getClassIdByName(deferredBreakpoint.className())));
+                }
                 case RESPONSE_TYPE_EVENT_REQUEST -> {}
                 case RESPONSE_TYPE_METHODS -> {
                     if (Optional.ofNullable(responsePacket.getMethods()).isPresent()) {
-                        methodsInfoObtained(responsePacket.getId(), responsePacket.getMethods());
+                        processDeferredBreakpoints(responsePacket.getId(), responsePacket.getMethods());
                     }
                 }
                 case RESPONSE_TYPE_ALL_THREADS ->
                         currentState.setActiveThreads(responsePacket.getActiveThreads());
-                case RESPONSE_TYPE_STRING_VALUE -> { // todo filling of arrayrequests
+                case RESPONSE_TYPE_STRING_VALUE -> {
                     Integer index = responseProcessor.getArrayRequests().get(responsePacket.getId());
                     if (index != null) {
                         logger.info("array String [{}], value: {}", index, responsePacket.getStringValue());
@@ -170,13 +187,6 @@ public class Debyter implements ResponseListener, UserInputListener {
                 requestClearEvent(EVENT_KIND_SINGLE_STEP, requestId);
             }
         }
-    }
-
-    private static void requestClearEvent(byte eventKind, int requestId) {
-        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, CLEAR_CMD);
-        packet.addDataAsByte(eventKind);
-        packet.addDataAsInt(requestId);
-        sendPacket(packet, RESPONSE_TYPE_NONE);
     }
 
     private static void requestByteCodes(long classId, long methodId) {
@@ -298,7 +308,34 @@ public class Debyter implements ResponseListener, UserInputListener {
         }
     }
 
+    private static void userRequestRemoveBreakpoint(String className, String methodName, long codeIndex) {
+        if (currentState.classMethodInfoAvailable(className, methodName)) {
+            long classId = currentState.getClassIdByName(className);
+            long methodId = currentState.getMethodIdByClassAndName(classId, methodName);
+            List<BreakpointRequest> breakpointRequestsToRemove = new ArrayList<>();
+            breakpointRequests.stream().filter(breakpointRequest -> breakpointRequest.classId() == classId &&
+                    breakpointRequest.methodId() == methodId &&
+                    breakpointRequest.codeIndex() == codeIndex).forEach(breakpointRequest ->
+                responseProcessor.getRegisteredEventIdOfId(breakpointRequest.id()).ifPresent(registeredRequestId -> {
+                    logger.info("removing the breakpoint");
+                    requestClearEvent(EVENT_KIND_BREAKPOINT, registeredRequestId);
+                    breakpointRequestsToRemove.add(breakpointRequest);
+                }));
+            breakpointRequestsToRemove.forEach(breakpointRequests::remove);
+        } else {
+            List<DeferredBreakpoint> deferredBreakpointsToRemove = new ArrayList<>();
+            deferredBreakpoints.stream().filter(deferredBreakpoint -> deferredBreakpoint.codeIndex() == codeIndex &&
+                    deferredBreakpoint.methodName().equals(methodName) &&
+                    deferredBreakpoint.className().equals(className)).forEach(deferredBreakpoint -> {
+                logger.info("cancelling the deferred breakpoint");
+                deferredBreakpointsToRemove.add(deferredBreakpoint);
+            });
+            deferredBreakpointsToRemove.forEach(deferredBreakpoints::remove);
+        }
+    }
+
     private static void requestBreakpointEvent(long classId, long methodId, long codeIndex) {
+        int id = getNewUniqueId();
         Packet packet = new Packet(id, EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, SET_CMD);
         packet.addDataAsByte(EVENT_KIND_BREAKPOINT);
         packet.addDataAsByte(SuspendPolicy.ALL);
@@ -309,6 +346,15 @@ public class Debyter implements ResponseListener, UserInputListener {
         packet.addDataAsLong(methodId);
         packet.addDataAsLong(codeIndex);
         sendPacket(packet, RESPONSE_TYPE_COMPOSITE_EVENT);
+        BreakpointRequest breakpointRequest = new BreakpointRequest(id, classId, methodId, codeIndex);
+        breakpointRequests.add(breakpointRequest);
+    }
+
+    private static void requestClearEvent(byte eventKind, int requestId) {
+        Packet packet = new Packet(getNewUniqueId(), EMPTY_FLAGS, EVENT_REQUEST_COMMAND_SET, CLEAR_CMD);
+        packet.addDataAsByte(eventKind);
+        packet.addDataAsInt(requestId);
+        sendPacket(packet, RESPONSE_TYPE_NONE);
     }
 
     private static void requestStepOverEvents() {
@@ -408,7 +454,7 @@ public class Debyter implements ResponseListener, UserInputListener {
         keepProcessing = false;
     }
 
-    private static void methodsInfoObtained(int id, List<AMethod> methodList) {
+    private static void processDeferredBreakpoints(int id, List<AMethod> methodList) {
         long classId = listMethodsRequestsForClass.get(id);
         for (AMethod method : methodList) {
             currentState.addMethodForClassId(classId, method);
@@ -534,35 +580,23 @@ public class Debyter implements ResponseListener, UserInputListener {
 
     private static void logGenericVariable(GenericVariable variable, boolean ofArray, int i) {
         switch (variable.type()) {
-            case Type.INT -> logValue(variable.value(), "int", ofArray, i);
+            case Type.INT, Type.OBJECT, Type.CLASS_OBJECT,
+                    Type.VOID, Type.LONG, Type.CLASS_LOADER,
+                    Type.THREAD_GROUP, Type.THREAD, Type.SHORT,
+                    Type.DOUBLE, Type.FLOAT, Type.CHAR,
+                    Type.BYTE, Type.BOOLEAN -> logValue(variable, ofArray, i);
             case Type.ARRAY -> requestArrayInfo(variable.value(), ofArray, i);
             case Type.STRING -> requestStringValue(variable.value(), ofArray, i);
-            case Type.OBJECT -> logValue(variable.value(), "object reference", ofArray, i);
-            case Type.BOOLEAN -> logValue(variable.value(), "boolean", ofArray, i);
-            case Type.BYTE -> logValue(variable.value(), "byte", ofArray, i);
-            case Type.CHAR -> logValue(variable.value(), "char", ofArray, i);
-            case Type.FLOAT -> logValue(variable.value(), "float", ofArray, i);
-            case Type.DOUBLE -> logValue(variable.value(), "double", ofArray, i);
-            case Type.SHORT -> logValue(variable.value(), "short", ofArray, i);
-            case Type.THREAD -> logValue(variable.value(), "thread", ofArray, i);
-            case Type.THREAD_GROUP -> logValue(variable.value(), "thread group", ofArray, i);
-            case Type.CLASS_LOADER -> logValue(variable.value(), "class loader", ofArray, i);
-            case Type.CLASS_OBJECT -> logValue(variable.value(), "class object", ofArray, i);
-            case Type.VOID -> logValue(variable.value(), "void", ofArray, i);
-            case Type.LONG -> logValue(variable.value(), "long", ofArray, i);
             default -> logger.error("something unexpected received: " + variable.value());
         }
     }
 
-    private static void requestObjectByReference(GenericVariable variable) {
-
-    }
-
-    private static void logValue(long value, String type, boolean ofArray, int index) {
+    private static void logValue(GenericVariable genericVariable, boolean ofArray, int index) {
+        String typeName = Type.getTypeName(genericVariable.type());
         if (ofArray) {
-            logger.info("array {} [{}], value: {}", type, index, value);
+            logger.info("array {} [{}], value: {}", typeName, index, genericVariable.value());
         } else {
-            logger.info("{}, value: {}", type, value);
+            logger.info("{}, value: {}", typeName, genericVariable.value());
         }
     }
 

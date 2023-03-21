@@ -18,6 +18,28 @@ public class Type {
     public static final int CLASS_LOADER = 108;
     public static final int CLASS_OBJECT = 99;
 
+    public static String getTypeName(int typeId) {
+        return switch (typeId) {
+            case Type.INT -> "int";
+            case Type.ARRAY -> "array";
+            case Type.STRING -> "String reference";
+            case Type.OBJECT -> "object reference";
+            case Type.BOOLEAN -> "boolean";
+            case Type.BYTE -> "byte";
+            case Type.CHAR -> "char";
+            case Type.FLOAT -> "float";
+            case Type.DOUBLE -> "double";
+            case Type.SHORT -> "short";
+            case Type.THREAD -> "thread";
+            case Type.THREAD_GROUP -> "thread group";
+            case Type.CLASS_LOADER -> "class loader";
+            case Type.CLASS_OBJECT -> "class object";
+            case Type.VOID -> "void";
+            case Type.LONG -> "long";
+            default -> "unknown";
+        };
+    }
+
     public static int getTypeBySignature(String signature) {
         return switch (signature) {
             case "[", "[Ljava/lang/String;" -> ARRAY;
