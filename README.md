@@ -14,13 +14,13 @@ The Debyter accepts address as input parameter in the following format:
 The above is also a default address in case no other address is provided.
 
 ### Set the breakpoint
-In order to set the breakpoint, type the following command:
+In order to set the breakpoint, use the command `bp` or `breakpoint`. Examples:
 
 `bp smthelusive.debyter.examples.TheDebuggee main 15` 
+`breakpoint smthelusive.debyter.examples.TheDebuggee main 15` 
 
 where: 
 
-- `bp` is the name of the command, meaning "breakpoint";
 - `smthelusive.debyter.examples.TheDebuggee` is the fully qualified class name;
 - `main` is the method name;
 - `15` is the code index.
@@ -73,6 +73,21 @@ so at this point integer value should be equal to `87`.
 
 All local variables are logged immediately when the breakpoint is hit.
 
+### Remove the breakpoint
+To remove the breakpoint, use the command `rm` or `remove`. Examples:
+
+`rm smthelusive.debyter.examples.TheDebuggee main 15`
+`remove smthelusive.debyter.examples.TheDebuggee main 15`
+
+where:
+
+- `smthelusive.debyter.examples.TheDebuggee` is the fully qualified class name;
+- `main` is the method name;
+- `15` is the code index.
+
+### Suspend
+To suspend target JVM, use command `suspend` or `pause`.
+
 ### Resume the JVM
 The JVM can be in the suspended state for the following reasons:
 - it was started in suspended mode
@@ -80,7 +95,7 @@ The JVM can be in the suspended state for the following reasons:
 - the breakpoint is hit
 - the step over is hit
 
-Use `resume` command to continue execution.
+Use `resume` or `run` command to continue execution.
 
 Important remark from the oracle docs:
 
@@ -95,11 +110,36 @@ All local variables are logged immediately when the step over is hit.
 ### Clear breakpoints
 Use `clear` command to remove all the breakpoints.
 
+### Stop the debuggee app execution
+It is possible to terminate execution of the debuggee app. Use command `stop` or `terminate`.
+
 ### Exit
-Use `exit` command to stop the debugger.
+Use `exit` command to exit the debugger. The debuggee application will not be affected.
+
+### Other remarks
+All local variables are logged, but not all of their values are parsed. 
+Debugger currently only supports primitive types, Strings and arrays (containing primitive types and Strings).
+For any other objects only references are logged.
 
 ## Implementation details
 Debugger connects to remotely running JVM with remote debugging enabled.
 The communication between debugger and JVM happens through the [JDWP](https://docs.oracle.com/javase/7/docs/technotes/guides/jpda/jdwp-spec.html) protocol.
+Communication through JDWP is asynchronous.
 
+`ResponseProcessor` is running in a separate thread, it listens to any responses from JVM, parses them and notifies listeners.\
+`UserInputProcessor` is running in a separate thread, it reads user commands from console, validates them and notifies listeners.\
+`Debyter` is running in the main thread. It listens to `ResponseProcessor` and `UserInputProcessor`,
+and puts the user commands and JVM responses onto dedicated queues. 
+It continuously in a loop consumes from the queues: 
+- a single user command,
+- all available JVM responses.
 
+`Debyter` is also responsible for sending requests to JVM. 
+
+Current design isn't great, the flow of requesting information from JVM 
+and collecting enough information for performing different request has grown overcomplicated.
+
+## Contributing
+This project was intended as a PoC, but if it's useful as a tool and receives some love, that's great! 
+Contributions are very welcome.
+For any questions & suggestions please reach out: smthelusive@gmail.com
