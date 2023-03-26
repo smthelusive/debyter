@@ -35,6 +35,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     private static int id = 0;
     private static final HashSet<DeferredBreakpoint> deferredBreakpoints = new HashSet<>();
     private static final Set<BreakpointRequest> breakpointRequests = new HashSet<>();
+    private static boolean needsResume = false;
 
 
     private static int getNewUniqueId() {
@@ -81,7 +82,10 @@ public class Debyter implements ResponseListener, UserInputListener {
                         userCommand.params()[0],
                         userCommand.params()[1],
                         Integer.parseInt(userCommand.params()[2]));
-                case STEP_OVER -> requestStepOverEvents();
+                case STEP_OVER -> {
+                    requestStepOverEvents();
+                    requestResume();
+                }
                 case CLEAR -> userRequestClearBreakpoints();
                 case RESUME -> {
                     requestResume();
@@ -99,6 +103,13 @@ public class Debyter implements ResponseListener, UserInputListener {
                         userCommand.params()[1],
                         Integer.parseInt(userCommand.params()[2]));
             }
+        }
+    }
+
+    private static void resumeIfNecessary() {
+        if (needsResume) {
+            needsResume = false;
+            requestResume();
         }
     }
 
@@ -131,6 +142,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                 case RESPONSE_TYPE_METHODS -> {
                     if (Optional.ofNullable(responsePacket.getMethods()).isPresent()) {
                         processDeferredBreakpoints(responsePacket.getId(), responsePacket.getMethods());
+                        resumeIfNecessary();
                     }
                 }
                 case RESPONSE_TYPE_ALL_THREADS ->
@@ -167,6 +179,7 @@ public class Debyter implements ResponseListener, UserInputListener {
                 currentState.setThreadId(event.getThread());
                 requestAllClasses();
                 requestMethodsOfClassInfo(event.getRefTypeId());
+                needsResume = true;
             }
         }
     }
@@ -358,7 +371,7 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void requestStepOverEvents() {
-        if (currentState.getThreadId() != 0) {
+        if (currentState.getThreadId() != -1) {
             requestStepOverForThread(currentState.getThreadId());
         } else {
             for (Long threadId : currentState.getActiveThreads()) {
@@ -472,15 +485,6 @@ public class Debyter implements ResponseListener, UserInputListener {
                                 requestBreakpointEvent(classId, method.methodId(), breakpoint.codeIndex());
                             }
                         }))));
-        /*
-         JVM has been suspended by suspend policy = ALL on receiving CLASS_LOADED event.
-         Suspend was necessary because it's only possible to request frame info when JVM is suspended.
-         Now, since all the info necessary for this class & methods to set breakpoints is available,
-         the resume command can be requested.
-         If JVM was suspended somewhere else too, this resume will only decrement
-         the amount of resume commands that need to be requested for JVM to continue running.
-         */
-        requestResume();
     }
 
     private static void logCurrentLocation() {
@@ -566,9 +570,9 @@ public class Debyter implements ResponseListener, UserInputListener {
     }
 
     private static void logLocalVariables(List<GenericVariable> variables, boolean ofArray) {
-        if (ofArray && !variables.isEmpty()) {
-            logger.info("ARRAY VALUES:");
-        } else if (!ofArray) {
+        if (ofArray) {
+            logger.info("ARRAY contains {} values", variables.size());
+        } else {
             logger.info("LOCAL VARIABLES:");
         }
         int i = 0;
@@ -585,7 +589,10 @@ public class Debyter implements ResponseListener, UserInputListener {
                     Type.THREAD_GROUP, Type.THREAD, Type.SHORT,
                     Type.DOUBLE, Type.FLOAT, Type.CHAR,
                     Type.BYTE, Type.BOOLEAN -> logValue(variable, ofArray, i);
-            case Type.ARRAY -> requestArrayInfo(variable.value(), ofArray, i);
+            case Type.ARRAY -> {
+                logger.info("array, reference: {}", variable.value());
+                requestArrayInfo(variable.value(), ofArray, i);
+            }
             case Type.STRING -> requestStringValue(variable.value(), ofArray, i);
             default -> logger.error("something unexpected received: " + variable.value());
         }
