@@ -473,6 +473,8 @@ public class Debyter implements ResponseListener, UserInputListener {
             currentState.addMethodForClassId(classId, method);
         }
         listMethodsRequestsForClass.remove(id);
+        List<DeferredBreakpoint> deferredBreakpointsToRemove = new ArrayList<>();
+
         currentState.getClasses().stream()
                 .filter(aClass -> aClass.typeID() == classId)
                         .map(AClass::signature).forEach(className ->
@@ -481,10 +483,11 @@ public class Debyter implements ResponseListener, UserInputListener {
                             if (Utils.getInternalRepresentationOfObjectType(breakpoint.className()).equals(className) &&
                                     breakpoint.methodName().equals(method.name())) {
                                 logger.info("requesting breakpoint that was deferred: {}", breakpoint);
-                                deferredBreakpoints.remove(breakpoint);
+                                deferredBreakpointsToRemove.add(breakpoint);
                                 requestBreakpointEvent(classId, method.methodId(), breakpoint.codeIndex());
                             }
                         }))));
+        deferredBreakpointsToRemove.forEach(deferredBreakpoints::remove);
     }
 
     private static void logCurrentLocation() {
